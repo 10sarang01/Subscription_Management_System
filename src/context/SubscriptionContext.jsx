@@ -1,53 +1,32 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   initialProducts,
-  initialQuotationTemplates,
-  initialSubscriptions,
   initialInvoices,
   initialDiscounts,
   initialPayments,
   defaultPersonas
 } from '../data/mockData';
+import { formatINR } from '../utils/currency';
 
 const SubscriptionContext = createContext();
-function getLocalDateString(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+function getStoredAuthToken() {
+  return localStorage.getItem('brightloop_token') || sessionStorage.getItem('brightloop_token');
 }
 
-function addDaysToDateString(dateString, days) {
-  if (!dateString || !Number.isFinite(Number(days))) return '';
-  const [year, month, day] = dateString.split('-').map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  date.setUTCDate(date.getUTCDate() + Number(days));
-  return date.toISOString().slice(0, 10);
+async function subscriptionApiRequest(url, options = {}) {
+  const token = getStoredAuthToken();
+  if (!token) throw new Error('Your session has expired. Please sign in again.');
+  const headers = {
+    Accept: 'application/json',
+    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    ...options.headers,
+    Authorization: `Bearer ${token}`
+  };
+  const response = await fetch(url, { ...options, headers });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'The subscription request failed.');
+  return data;
 }
-
-function getNextDocumentNumber(prefix, existingSubscriptions, date = new Date()) {
-  const year = date.getFullYear();
-  const pattern = new RegExp(`^${prefix}-${year}-(\\d+)$`);
-  const existingNumbers = new Set(existingSubscriptions.map((sub) => sub.subNumber).filter(Boolean));
-  let nextSequence = existingSubscriptions.reduce((highest, sub) => {
-    const match = String(sub.subNumber || '').match(pattern);
-    return match ? Math.max(highest, Number(match[1])) : highest;
-  }, 0) + 1;
-  let candidate = `${prefix}-${year}-${String(nextSequence).padStart(3, '0')}`;
-  while (existingNumbers.has(candidate)) {
-    nextSequence += 1;
-    candidate = `${prefix}-${year}-${String(nextSequence).padStart(3, '0')}`;
-  }
-  return candidate;
-}
-
-function createSubscriptionId() {
-  if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
-    return `sub-${globalThis.crypto.randomUUID()}`;
-  }
-  return `sub-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
 export function SubscriptionProvider({ children, initialUser }) {
   // ── Products (localStorage persisted) ──────────────────────────────────
   const [products, setProducts] = useState(() => {
@@ -62,16 +41,14 @@ export function SubscriptionProvider({ children, initialUser }) {
     return saved ? JSON.parse(saved) : {};
   });
 
-  const [quotationTemplates, setQuotationTemplates] = useState(() => {
-    const saved = localStorage.getItem('brightloop_templates');
-    return saved ? JSON.parse(saved) : initialQuotationTemplates;
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [subscriptionsLoading, setSubscriptionsLoading] = useState(true);
+  const [subscriptionsError, setSubscriptionsError] = useState('');
+  const [subscriptionOptions, setSubscriptionOptions] = useState({
+    customers: [], products: [], plans: [], templates: [], discounts: [], defaultValidityDays: 30
   });
-
-  const [subscriptions, setSubscriptions] = useState(() => {
-    const saved = localStorage.getItem('brightloop_subscriptions');
-    return saved ? JSON.parse(saved) : initialSubscriptions;
-  });
-
+  const [subscriptionOptionsLoading, setSubscriptionOptionsLoading] = useState(true);
+  const [subscriptionOptionsError, setSubscriptionOptionsError] = useState('');
   const [invoices, setInvoices] = useState(() => {
     const saved = localStorage.getItem('brightloop_invoices');
     return saved ? JSON.parse(saved) : initialInvoices;
@@ -101,6 +78,48 @@ export function SubscriptionProvider({ children, initialUser }) {
     setTimeout(() => setToast(null), 4000);
   };
 
+  const refreshSubscriptions = useCallback(async () => {
+    setSubscriptionsLoading(true);
+    try {
+      const data = await subscriptionApiRequest('/api/subscriptions');
+      const loadedSubscriptions = Array.isArray(data.subscriptions) ? data.subscriptions : [];
+      setSubscriptions(loadedSubscriptions);
+      setSubscriptionsError('');
+      return loadedSubscriptions;
+    } catch (error) {
+      setSubscriptions([]);
+      setSubscriptionsError(error.message || 'Could not load subscriptions from the database.');
+      return [];
+    } finally {
+      setSubscriptionsLoading(false);
+    }
+  }, []);
+
+  const refreshSubscriptionOptions = useCallback(async () => {
+    setSubscriptionOptionsLoading(true);
+    try {
+      const data = await subscriptionApiRequest('/api/subscriptions/options');
+      setSubscriptionOptions({
+        customers: Array.isArray(data.customers) ? data.customers : [],
+        products: Array.isArray(data.products) ? data.products : [],
+        plans: Array.isArray(data.plans) ? data.plans : [],
+        templates: Array.isArray(data.templates) ? data.templates : [],
+        discounts: Array.isArray(data.discounts) ? data.discounts : [],
+        defaultValidityDays: Number(data.defaultValidityDays) || 30
+      });
+      setSubscriptionOptionsError('');
+    } catch (error) {
+      setSubscriptionOptions({ customers: [], products: [], plans: [], templates: [], discounts: [], defaultValidityDays: 30 });
+      setSubscriptionOptionsError(error.message || 'Could not load quotation choices from Brightloop.');
+    } finally {
+      setSubscriptionOptionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSubscriptions();
+    void refreshSubscriptionOptions();
+  }, [refreshSubscriptions, refreshSubscriptionOptions]);
   // ── localStorage sync ─────────────────────────────────────────────────
   useEffect(() => {
     localStorage.setItem('brightloop_products', JSON.stringify(products));
@@ -110,9 +129,6 @@ export function SubscriptionProvider({ children, initialUser }) {
     localStorage.setItem('brightloop_product_plans', JSON.stringify(productPlans));
   }, [productPlans]);
 
-  useEffect(() => {
-    localStorage.setItem('brightloop_subscriptions', JSON.stringify(subscriptions));
-  }, [subscriptions]);
 
   useEffect(() => {
     localStorage.setItem('brightloop_invoices', JSON.stringify(invoices));
@@ -404,63 +420,57 @@ export function SubscriptionProvider({ children, initialUser }) {
     showToast('Plan removed.', 'info');
   };
 
-  // ── Subscription Actions ──────────────────────────────────────────────
+  // ── Subscription Actions (SQLite API is the source of truth) ──────────
 
-  const createSubscription = (quoteData) => {
-    const today = getLocalDateString();
-    const status = quoteData.status || 'Draft';
-    const numberPrefix = ['Draft', 'Quotation'].includes(status) ? 'QT' : 'SUB';
-    const parsedValidityDays = Number.parseInt(quoteData.quoteValidityDays, 10);
-    const quoteValidityDays = Number.isInteger(parsedValidityDays) && parsedValidityDays > 0
-      ? parsedValidityDays
-      : 30;
-    const newSub = {
-      ...quoteData,
-      id: createSubscriptionId(),
-      status,
-      subNumber: getNextDocumentNumber(numberPrefix, subscriptions),
-      quoteValidityDays,
-      quoteValidUntil: quoteData.quoteValidUntil || addDaysToDateString(today, quoteValidityDays),
-      quoteIssuedAt: status === 'Quotation' ? (quoteData.quoteIssuedAt || today) : (quoteData.quoteIssuedAt || null),
-      createdAt: quoteData.createdAt || today,
-      updatedAt: today
-    };
-    setSubscriptions((prev) => [newSub, ...prev]);
-    showToast(`${numberPrefix === 'QT' ? 'Quotation' : 'Subscription'} ${newSub.subNumber} created in ${status} status!`, 'success');
-    return newSub;
+  const createSubscription = async (quoteData) => {
+    try {
+      const data = await subscriptionApiRequest('/api/subscriptions', {
+        method: 'POST',
+        body: JSON.stringify(quoteData)
+      });
+      const created = data.subscription;
+      if (!created) throw new Error('The server did not return the saved subscription.');
+      setSubscriptions((prev) => [created, ...prev.filter((sub) => sub.id !== created.id)]);
+      setSubscriptionsError('');
+      showToast(`${created.subNumber} created in ${created.status} status!`, 'success');
+      return created;
+    } catch (error) {
+      showToast(error.message || 'Could not save the subscription.', 'error');
+      return null;
+    }
   };
 
-  const updateSubscriptionStatus = (id, newStatus) => {
-    const currentSub = subscriptions.find((sub) => sub.id === id);
-    if (!currentSub) return null;
-    const today = getLocalDateString();
-    const isReissuedQuotation = currentSub.status === 'Closed' && newStatus === 'Quotation';
-    const isRejectedQuote = newStatus === 'Closed' && ['Draft', 'Quotation'].includes(currentSub.status);
-    const targetPrefix = ['Draft', 'Quotation'].includes(newStatus) || isRejectedQuote ? 'QT' : 'SUB';
-    const numberNeedsRefresh = isReissuedQuotation || !String(currentSub.subNumber || '').startsWith(`${targetPrefix}-`);
-    const subNumber = numberNeedsRefresh
-      ? getNextDocumentNumber(targetPrefix, subscriptions)
-      : currentSub.subNumber;
-    const parsedValidityDays = Number.parseInt(currentSub.quoteValidityDays, 10);
-    const quoteValidityDays = Number.isInteger(parsedValidityDays) && parsedValidityDays > 0
-      ? parsedValidityDays
-      : 30;
-    const isIssuingQuotation = newStatus === 'Quotation' && currentSub.status !== 'Quotation';
-    const updatedSub = {
-      ...currentSub,
-      status: newStatus,
-      subNumber,
-      updatedAt: today,
-      ...(isIssuingQuotation ? {
-        quoteValidityDays,
-        quoteIssuedAt: today,
-        quoteValidUntil: addDaysToDateString(today, quoteValidityDays),
-        ...(isReissuedQuotation ? { renewalOf: currentSub.subNumber } : {})
-      } : {})
-    };
-    setSubscriptions((prev) => prev.map((sub) => sub.id === id ? updatedSub : sub));
-    showToast(`Subscription updated to status: ${newStatus}`, 'info');
-    return updatedSub;
+  const updateSubscriptionStatus = async (id, newStatus) => {
+    try {
+      const data = await subscriptionApiRequest(`/api/subscriptions/${encodeURIComponent(id)}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: newStatus })
+      });
+      const updated = data.subscription;
+      if (!updated) throw new Error('The server did not return the updated subscription.');
+      setSubscriptions((prev) => prev.map((sub) => sub.id === id ? updated : sub));
+      setSubscriptionsError('');
+      showToast(`Subscription updated to ${newStatus}.`, 'success');
+      return updated;
+    } catch (error) {
+      showToast(error.message || 'Could not update the subscription.', 'error');
+      return null;
+    }
+  };
+
+  const saveSubscriptionBillingDates = async (id, billingDates) => {
+    try {
+      const data = await subscriptionApiRequest(`/api/subscriptions/${encodeURIComponent(id)}/billing-dates`, {
+        method: 'PATCH',
+        body: JSON.stringify(billingDates)
+      });
+      const updated = data.subscription;
+      if (updated) setSubscriptions((prev) => prev.map((sub) => sub.id === id ? updated : sub));
+      return updated || null;
+    } catch (error) {
+      showToast(`Subscription billing dates were not saved: ${error.message}`, 'error');
+      return null;
+    }
   };
   // ── Billing Day Engine: Scene 4 & 5 ───────────────────────────────────
 
@@ -529,11 +539,12 @@ export function SubscriptionProvider({ children, initialUser }) {
     code,
     items = [],
     subtotal = 0,
-    date = new Date().toISOString().split('T')[0]
+    date = new Date().toISOString().split('T')[0],
+    rules = discounts
   }) => {
     if (!code || !code.trim()) return { valid: false, message: '' };
     const cleanCode = code.trim().toUpperCase();
-    const rule = discounts.find((d) => d.code.toUpperCase() === cleanCode);
+    const rule = rules.find((d) => d.code.toUpperCase() === cleanCode);
 
     if (!rule) {
       return { valid: false, message: `Coupon code "${cleanCode}" does not exist.` };
@@ -566,7 +577,7 @@ export function SubscriptionProvider({ children, initialUser }) {
       return {
         valid: false,
         rule,
-        message: `Minimum spend: Requires at least $${rule.minAmount.toFixed(2)} (current: $${subtotal.toFixed(2)}).`
+        message: `Minimum spend: Requires at least ${formatINR(rule.minAmount)} (current: ${formatINR(subtotal)}).`
       };
     }
 
@@ -595,7 +606,7 @@ export function SubscriptionProvider({ children, initialUser }) {
       valid: true,
       rule,
       deduction,
-      message: `✅ "${rule.name}" applied: ${rule.type === 'percentage' ? `${rule.value}% off` : `$${rule.value} off`} (-$${deduction.toFixed(2)})`
+      message: `✅ "${rule.name}" applied: ${rule.type === 'percentage' ? `${rule.value}% off` : `${formatINR(rule.value)} off`} (-${formatINR(deduction)})`
     };
   };
 
@@ -686,19 +697,21 @@ export function SubscriptionProvider({ children, initialUser }) {
     if (newInvoicesList.length > 0) {
       setInvoices((prev) => [...newInvoicesList, ...prev]);
 
-      setSubscriptions((prev) =>
-        prev.map((sub) => {
-          if (updatedSubIds.has(sub.id)) {
-            const nextDate = advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency);
-            return {
-              ...sub,
-              lastBillingDate: targetDateStr,
-              nextBillingDate: nextDate
-            };
-          }
-          return sub;
-        })
-      );
+      const billingDateUpdates = subscriptions
+        .filter((sub) => updatedSubIds.has(sub.id))
+        .map((sub) => ({
+          ...sub,
+          lastBillingDate: targetDateStr,
+          nextBillingDate: advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency)
+        }));
+      const updatedBillingById = new Map(billingDateUpdates.map((sub) => [sub.id, sub]));
+      setSubscriptions((prev) => prev.map((sub) => updatedBillingById.get(sub.id) || sub));
+      billingDateUpdates.forEach((sub) => {
+        void saveSubscriptionBillingDates(sub.id, {
+          lastBillingDate: sub.lastBillingDate,
+          nextBillingDate: sub.nextBillingDate
+        });
+      });
 
       if (Object.keys(usedDiscountMap).length > 0) {
         // Sync discount usage to live SQLite database
@@ -728,7 +741,7 @@ export function SubscriptionProvider({ children, initialUser }) {
       }
 
       showToast(
-        `⚡ Billing Day Run: ${newInvoicesList.length} invoices generated ($${totalGeneratedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })})! Next billing dates advanced.`,
+        `⚡ Billing Day Run: ${newInvoicesList.length} invoices generated (${formatINR(totalGeneratedAmount)})! Next billing dates advanced.`,
         'success'
       );
     } else {
@@ -795,7 +808,7 @@ export function SubscriptionProvider({ children, initialUser }) {
     };
 
     setPayments((prev) => [newPayment, ...prev]);
-    showToast(`Payment of $${paymentAmount.toFixed(2)} recorded for ${targetInvoice.invoiceNumber}`, 'success');
+    showToast(`Payment of ${formatINR(paymentAmount)} recorded for ${targetInvoice.invoiceNumber}`, 'success');
   };
 
   // ── Discount Actions (Live SQLite Persistence) ─────────────────────────
@@ -898,23 +911,22 @@ export function SubscriptionProvider({ children, initialUser }) {
   const resetToDefaultData = async () => {
     localStorage.removeItem('brightloop_products');
     localStorage.removeItem('brightloop_product_plans');
-    localStorage.removeItem('brightloop_subscriptions');
     localStorage.removeItem('brightloop_invoices');
     localStorage.removeItem('brightloop_discounts');
     localStorage.removeItem('brightloop_payments');
 
     setProducts([]);
     setProductPlans({});
-    setSubscriptions(initialSubscriptions);
     setInvoices(initialInvoices);
     setPayments(initialPayments);
+    void refreshSubscriptions();
 
     const refreshed = await fetchDiscounts();
     if (!refreshed || refreshed.length === 0) {
       setDiscounts(initialDiscounts);
     }
 
-    showToast('Platform reset to clean live state!', 'info');
+    showToast('Local demo data reset. Shared database subscriptions were preserved.', 'info');
   };
 
   return (
@@ -923,8 +935,14 @@ export function SubscriptionProvider({ children, initialUser }) {
         // Data
         products,
         productPlans,
-        quotationTemplates,
         subscriptions,
+        subscriptionsLoading,
+        subscriptionsError,
+        refreshSubscriptions,
+        subscriptionOptions,
+        subscriptionOptionsLoading,
+        subscriptionOptionsError,
+        refreshSubscriptionOptions,
         invoices,
         discounts,
         payments,
@@ -946,6 +964,7 @@ export function SubscriptionProvider({ children, initialUser }) {
         // Subscription actions
         createSubscription,
         updateSubscriptionStatus,
+        saveSubscriptionBillingDates,
         runBillingDay,
         getDueSubscriptions,
         // Invoice actions
