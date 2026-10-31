@@ -1,44 +1,68 @@
-const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bcrypt = require('bcryptjs');
 
 // Database path for official SQLite database
 const DB_PATH = path.join(__dirname, '..', 'users.db');
 
-const db = new sqlite3.Database(DB_PATH, (err) => {
-  if (err) {
-    console.error('❌ Error connecting to SQLite database:', err.message);
-  } else {
-    console.log('📦 Connected to SQLite database at:', DB_PATH);
-  }
-});
+let run, get, all, db;
 
-// Helper for promise-based queries
-function run(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve(this);
-    });
+try {
+  const sqlite3 = require('sqlite3').verbose();
+  db = new sqlite3.Database(DB_PATH, (err) => {
+    if (err) {
+      console.error('❌ Error connecting to SQLite database:', err.message);
+    } else {
+      console.log('📦 Connected to SQLite database at:', DB_PATH);
+    }
   });
-}
 
-function get(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
+  run = function (sql, params = []) {
+    return new Promise((resolve, reject) => {
+      db.run(sql, params, function (err) {
+        if (err) reject(err);
+        else resolve(this);
+      });
     });
-  });
-}
+  };
 
-function all(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
+  get = function (sql, params = []) {
+    return new Promise((resolve, reject) => {
+      db.get(sql, params, (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
     });
-  });
+  };
+
+  all = function (sql, params = []) {
+    return new Promise((resolve, reject) => {
+      db.all(sql, params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  };
+} catch (e) {
+  // Graceful fallback to Node's built-in native SQLite engine (Node 22+)
+  const { DatabaseSync } = require('node:sqlite');
+  db = new DatabaseSync(DB_PATH);
+  console.log('📦 Connected to native SQLite database at:', DB_PATH);
+
+  run = async function (sql, params = []) {
+    const stmt = db.prepare(sql);
+    const res = stmt.run(...params);
+    return { lastID: res.lastInsertRowid, changes: res.changes };
+  };
+
+  get = async function (sql, params = []) {
+    const stmt = db.prepare(sql);
+    return stmt.get(...params);
+  };
+
+  all = async function (sql, params = []) {
+    const stmt = db.prepare(sql);
+    return stmt.all(...params);
+  };
 }
 
 // Initialize Users Table and default Admin
