@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FileText,
   Plus,
@@ -426,8 +427,8 @@ export default function SubscriptionsPage() {
         </div>
 
         {/* Subscriptions Table */}
-        <div className="table-container">
-          <table className="neu-table">
+        <div className="table-container subscriptions-table-container">
+          <table className="neu-table subscriptions-table">
             <thead>
               <tr>
                 <th>Contract #</th>
@@ -486,37 +487,35 @@ export default function SubscriptionsPage() {
       </div>
 
       {/* Subscription Inspector / Lifecycle Actions Modal */}
-      {selectedSub && (
-        <div className="modal-overlay" onClick={() => setSelectedSub(null)}>
-          <div className="modal-card animate-fade-in" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '780px' }}>
+      {selectedSub && createPortal(
+        <div className="modal-overlay subscription-overlay" onClick={() => setSelectedSub(null)}>
+          <div className="modal-card subscription-details animate-fade-in" role="dialog" aria-modal="true" aria-label="Subscription details" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '780px' }}>
             
             {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid rgba(184, 194, 204, 0.3)', paddingBottom: '16px', marginBottom: '20px' }}>
+            <div className="subscription-details-header">
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div className="subscription-title">
                   <h3 style={{ fontSize: '1.4rem', fontWeight: 800 }}>
                     {selectedSub.subNumber}
                   </h3>
                   {getStatusBadge(selectedSub.status)}
                 </div>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Customer: <strong>{selectedSub.customerName}</strong> ({selectedSub.customerEmail})
-                </p>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Quote valid until <strong>{selectedSub.quoteValidUntil || 'Not specified'}</strong>
-                  {' · '}Subscription term: <strong>{selectedSub.startDate || '—'} to {selectedSub.expiryDate || '—'}</strong>
-                </p>
+                <div className="subscription-meta">
+                  <div><span>Customer</span><strong>{selectedSub.customerName}</strong><small>{selectedSub.customerEmail}</small></div>
+                  <div><span>Subscription term</span><strong>{selectedSub.startDate || '—'} to {selectedSub.expiryDate || '—'}</strong></div>
+                  <div><span>Quote valid until</span><strong>{selectedSub.quoteValidUntil || 'Not specified'}</strong></div>
+                </div>
               </div>
 
-              <button onClick={() => setSelectedSub(null)} className="neu-btn" style={{ padding: '6px 12px' }}>
+              <button onClick={() => setSelectedSub(null)} className="neu-btn subscription-close" aria-label="Close subscription details">
                 ✕
               </button>
             </div>
 
             {/* Lifecycle State Transitions Action Bar */}
-            <div className="neu-inset-sm" style={{ padding: '16px 20px', marginBottom: '24px' }}>
+            <div className="neu-inset-sm subscription-actions">
               <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px' }}>
-                Stage Progression & Lifecycle Controls
+                Subscription actions
               </div>
 
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -574,7 +573,7 @@ export default function SubscriptionsPage() {
                         transitionSubscription('Paused');
                       }}
                       className="neu-btn"
-                      style={{ padding: '8px 14px', fontSize: '0.82rem', color: '#c2410c' }}
+                      style={{ padding: '8px 14px', fontSize: '0.82rem', color: 'var(--warning-text)' }}
                     >
                       <Pause size={14} /> Pause Contract
                     </button>
@@ -626,7 +625,7 @@ export default function SubscriptionsPage() {
             {/* Line Items Table */}
             <div style={{ marginBottom: '20px' }}>
               <h4 style={{ fontSize: '0.98rem', fontWeight: 800, marginBottom: '10px' }}>
-                Itemized Product & Variant Lines
+                Products & pricing
               </h4>
               <div className="table-container">
                 <table className="neu-table">
@@ -662,8 +661,8 @@ export default function SubscriptionsPage() {
             </div>
 
             {/* Contract Financial Summary */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid rgba(184, 194, 204, 0.3)', paddingTop: '16px' }}>
-              <div style={{ minWidth: '240px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.88rem' }}>
+            <div className="subscription-summary">
+              <div className="subscription-summary-content">
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
                   <span>Payment Terms:</span>
                   <strong>{selectedSub.paymentTerms}</strong>
@@ -671,12 +670,12 @@ export default function SubscriptionsPage() {
                 {selectedSub.discountCode && (() => {
                   const rule = discounts.find((d) => d.code === selectedSub.discountCode);
                   return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', padding: '6px 10px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#15803d', fontWeight: 700 }}>
+                    <div className="subscription-discount">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', fontWeight: 700 }}>
                         <span>Negotiated Discount:</span>
                         <span>{selectedSub.discountCode}</span>
                       </div>
-                      <div style={{ fontSize: '0.74rem', color: '#166534' }}>
+                      <div style={{ fontSize: '0.74rem' }}>
                         {rule ? `${rule.name} (${rule.type === 'percentage' ? `${rule.value}% off` : `$${rule.value} off`}) • Scope: ${rule.scope.replace('_', ' ')}` : 'Active on next recurring invoice'}
                       </div>
                     </div>
@@ -690,12 +689,12 @@ export default function SubscriptionsPage() {
             </div>
 
           </div>
-        </div>
+        </div>, document.body
       )}
 
       {/* Modal: New Quote / Subscription Builder */}
-      {showCreateModal && (
-        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
+      {showCreateModal && createPortal(
+        <div className="modal-overlay billing-overlay" onClick={() => setShowCreateModal(false)}>
           <div className="modal-card animate-fade-in" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '820px' }}>
             <h3 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: '6px' }}>
               Create Quote or Subscription
@@ -1063,7 +1062,7 @@ export default function SubscriptionsPage() {
 
             </form>
           </div>
-        </div>
+        </div>, document.body
       )}
 
     </div>

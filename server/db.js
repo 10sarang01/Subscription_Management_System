@@ -721,6 +721,11 @@ async function deleteDiscount(id) {
   return db.prepare('DELETE FROM discounts WHERE id = ?').run(id);
 }
 
+async function getVariantsByProductId(productId) {
+  const product = db.prepare('SELECT variants_json FROM products WHERE id = ?').get(productId);
+  return product && product.variants_json ? JSON.parse(product.variants_json) : [];
+}
+
 module.exports = {
   db,
   initDatabase,

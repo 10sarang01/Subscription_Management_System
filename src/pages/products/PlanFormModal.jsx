@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Calendar,
   Save,
@@ -44,8 +45,8 @@ export default function PlanFormModal({ product, editingPlan, onSubmit, onClose 
 
   const isEditing = Boolean(editingPlan);
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
+  return createPortal(
+    <div className="modal-overlay billing-overlay" onClick={onClose}>
       <div
         className="modal-card animate-fade-in"
         onClick={e => e.stopPropagation()}
@@ -254,6 +255,6 @@ export default function PlanFormModal({ product, editingPlan, onSubmit, onClose 
           </div>
         </form>
       </div>
-    </div>
+    </div>, document.body
   );
 }

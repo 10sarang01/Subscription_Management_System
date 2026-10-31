@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CreditCard,
   Zap,
@@ -550,13 +551,13 @@ export default function BillingPage() {
       </div>
 
       {/* Invoice Printable Preview Modal (Scene 4: Print/PDF) */}
-      {selectedInvoice && !showPaymentModal && (
-        <div className="modal-overlay" onClick={() => setSelectedInvoice(null)}>
+      {selectedInvoice && !showPaymentModal && createPortal(
+        <div className="modal-overlay billing-overlay" onClick={() => setSelectedInvoice(null)}>
           <div className="modal-card animate-fade-in" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '780px', background: 'var(--bg-surface)', color: 'var(--text-main)', border: '1px solid var(--border-color)' }}>
             
             {/* Modal Actions Top Bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px', marginBottom: '24px' }}>
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px', marginBottom: '24px' }}>
+              <div className="invoice-actions">
                 <button
                   onClick={() => window.print()}
                   className="neu-btn"
@@ -615,7 +616,7 @@ export default function BillingPage() {
                 )}
               </div>
 
-              <button onClick={() => setSelectedInvoice(null)} className="neu-btn" style={{ padding: '6px 12px' }}>
+              <button onClick={() => setSelectedInvoice(null)} className="neu-btn" aria-label="Close invoice" style={{ width: '40px', height: '40px', flexShrink: 0 }}> 
                 ✕
               </button>
             </div>
@@ -763,12 +764,12 @@ export default function BillingPage() {
             </div>
 
           </div>
-        </div>
+        </div>, document.body
       )}
 
       {/* Record Payment Modal */}
-      {showPaymentModal && selectedInvoice && (
-        <div className="modal-overlay" onClick={() => setShowPaymentModal(false)}>
+      {showPaymentModal && selectedInvoice && createPortal(
+        <div className="modal-overlay billing-overlay" onClick={() => setShowPaymentModal(false)}>
           <div className="modal-card animate-fade-in" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
             <h3 style={{ fontSize: '1.3rem', fontWeight: 800, marginBottom: '6px' }}>
               Record Customer Payment
@@ -832,7 +833,7 @@ export default function BillingPage() {
               </div>
             </form>
           </div>
-        </div>
+        </div>, document.body
       )}
 
     </div>
