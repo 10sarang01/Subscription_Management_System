@@ -1,9 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import {
-  initialInvoices,
-  initialPayments,
-  defaultPersonas
-} from '../data/mockData';
 import { formatINR } from '../utils/currency';
 
 const SubscriptionContext = createContext();
@@ -51,10 +46,7 @@ export function SubscriptionProvider({ children, initialUser }) {
   const [payments, setPayments] = useState([]);
 
   // Current active persona
-  const [currentPersona, setCurrentPersona] = useState(() => {
-    if (initialUser) return initialUser;
-    return defaultPersonas[0];
-  });
+  const [currentPersona, setCurrentPersona] = useState(() => initialUser || {});
 
   // Toast notification
   const [toast, setToast] = useState(null);
