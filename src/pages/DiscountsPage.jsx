@@ -16,7 +16,7 @@ import {
 import { useSubscription } from '../context/SubscriptionContext';
 
 export default function DiscountsPage() {
-  const { discounts, products, createDiscount, currentPersona } = useSubscription();
+  const { discounts, products, createDiscount, toggleDiscountStatus, currentPersona } = useSubscription();
 
   const [showModal, setShowModal] = useState(false);
   const isAdmin = currentPersona.role === 'admin';
@@ -278,11 +278,16 @@ export default function DiscountsPage() {
                 <th>Validity Dates</th>
                 <th>Usage Limit & Capacity</th>
                 <th>Status</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {discounts.map((d) => {
-                const usagePercent = Math.min(100, Math.round((d.timesUsed / d.usageLimit) * 100));
+                const usagePercent = Math.min(100, Math.round(((d.timesUsed || 0) / (d.usageLimit || 1)) * 100));
+                const targetProd = d.targetProductId ? products.find((p) => p.id === d.targetProductId) : null;
+                const isExhausted = d.usageLimit && (d.timesUsed || 0) >= d.usageLimit;
+                const isPastEndDate = d.endDate && new Date().toISOString().split('T')[0] > d.endDate;
+
                 return (
                   <tr key={d.id} className="table-row">
                     <td>
@@ -294,8 +299,15 @@ export default function DiscountsPage() {
                     <td style={{ fontWeight: 800, fontSize: '1rem' }}>
                       {d.type === 'percentage' ? `${d.value}% Off` : `$${d.value}.00 Off`}
                     </td>
-                    <td style={{ fontSize: '0.82rem', textTransform: 'capitalize' }}>
-                      {d.scope.replace('_', ' ')}
+                    <td style={{ fontSize: '0.82rem' }}>
+                      <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>
+                        {d.scope.replace('_', ' ')}
+                      </span>
+                      {d.scope === 'specific_product' && targetProd && (
+                        <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--primary)' }}>
+                          {targetProd.name}
+                        </span>
+                      )}
                     </td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                       <div>Min Seats: <strong>{d.minQuantity}</strong></div>
@@ -307,7 +319,7 @@ export default function DiscountsPage() {
                     </td>
                     <td style={{ minWidth: '160px' }}>
                       <div style={{ fontSize: '0.78rem', fontWeight: 700, display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span>{d.timesUsed} / {d.usageLimit} redeemed</span>
+                        <span>{d.timesUsed || 0} / {d.usageLimit} redeemed</span>
                         <span>{usagePercent}%</span>
                       </div>
                       <div style={{ height: '6px', background: '#cbd5e1', borderRadius: '999px', overflow: 'hidden' }}>
@@ -322,12 +334,32 @@ export default function DiscountsPage() {
                       </div>
                     </td>
                     <td>
-                      {d.timesUsed >= d.usageLimit ? (
+                      {isExhausted ? (
                         <span className="status-pill status-closed">Exhausted</span>
+                      ) : isPastEndDate ? (
+                        <span className="status-pill status-closed">Expired</span>
                       ) : d.isActive ? (
                         <span className="status-pill status-active">Active</span>
                       ) : (
-                        <span className="status-pill status-closed">Expired</span>
+                        <span className="status-pill status-paused">Paused</span>
+                      )}
+                    </td>
+                    <td>
+                      {isAdmin ? (
+                        <button
+                          onClick={() => toggleDiscountStatus(d.id)}
+                          className="neu-btn"
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            color: d.isActive ? 'var(--error)' : 'var(--primary)'
+                          }}
+                        >
+                          {d.isActive ? 'Pause' : 'Activate'}
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Admin Only</span>
                       )}
                     </td>
                   </tr>
@@ -420,6 +452,25 @@ export default function DiscountsPage() {
                   </select>
                 </div>
               </div>
+
+              {discountForm.scope === 'specific_product' && (
+                <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Target Product for Line Deduction (Scene 5)
+                  </label>
+                  <select
+                    value={discountForm.targetProductId}
+                    onChange={(e) => setDiscountForm({ ...discountForm, targetProductId: e.target.value })}
+                    className="neu-inset neu-input"
+                  >
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (${p.salesPrice})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                 <div>

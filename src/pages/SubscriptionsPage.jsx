@@ -17,7 +17,9 @@ import {
   FileCheck,
   CheckCircle2,
   SlidersHorizontal,
-  ChevronRight
+  ChevronRight,
+  AlertCircle,
+  Sparkles
 } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
 
@@ -26,10 +28,12 @@ export default function SubscriptionsPage() {
     subscriptions,
     plans,
     products,
+    discounts,
     quotationTemplates,
     createSubscription,
     updateSubscriptionStatus,
-    runBillingDay
+    runBillingDay,
+    validateDiscount
   } = useSubscription();
 
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -119,16 +123,49 @@ export default function SubscriptionsPage() {
     setFormItems(formItems.filter((_, i) => i !== index));
   };
 
+  // Seat and Subtotal Metrics (Scene 5)
+  const totalFormSeats = formItems.reduce((acc, item) => acc + (parseInt(item.quantity) || 1), 0);
+  const formSubtotal = formItems.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
+
+  // Live discount validation for Quote modal
+  const discountValidation = validateDiscount({
+    code: formDiscountCode,
+    items: formItems,
+    subtotal: formSubtotal,
+    date: new Date().toISOString().split('T')[0]
+  });
+
+  const calculateFormFinancials = () => {
+    const subtotal = formSubtotal;
+    const discountDeduction = discountValidation.valid ? discountValidation.deduction : 0;
+    const discountedSubtotal = Math.max(0, subtotal - discountDeduction);
+    const taxes = discountedSubtotal * 0.10;
+    const grandTotal = Math.max(0, discountedSubtotal + taxes);
+    return {
+      subtotal,
+      discountDeduction,
+      discountedSubtotal,
+      taxes,
+      grandTotal
+    };
+  };
+
   const calculateFormTotal = () => {
-    const subtotal = formItems.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
-    const taxes = subtotal * 0.10;
-    return subtotal + taxes;
+    return calculateFormFinancials().grandTotal;
+  };
+
+  // 1-Click Volume deal seat qualification for sales negotiations (Scene 5)
+  const autoBumpSeatsToQualify = (targetQuantity) => {
+    if (!targetQuantity || formItems.length === 0) return;
+    const otherSeats = formItems.slice(1).reduce((sum, it) => sum + (parseInt(it.quantity) || 1), 0);
+    const needed = Math.max(1, targetQuantity - otherSeats);
+    updateItemRow(0, 'quantity', needed);
   };
 
   const handleCreateSubmit = (e, initialStatus = 'Draft') => {
     e.preventDefault();
     const selectedPlanObj = plans.find((p) => p.id === formPlanId) || plans[0];
-    const totalAmount = calculateFormTotal();
+    const financials = calculateFormFinancials();
 
     const created = createSubscription({
       customerName: formCustomer,
@@ -141,9 +178,9 @@ export default function SubscriptionsPage() {
       nextBillingDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
       paymentTerms: formPaymentTerms,
       status: initialStatus, // Draft or Quotation
-      discountCode: formDiscountCode,
+      discountCode: formDiscountCode.trim() ? formDiscountCode.trim().toUpperCase() : '',
       items: formItems,
-      totalAmount
+      totalAmount: financials.grandTotal
     });
 
     setShowCreateModal(false);
@@ -489,12 +526,20 @@ export default function SubscriptionsPage() {
                   <span>Payment Terms:</span>
                   <strong>{selectedSub.paymentTerms}</strong>
                 </div>
-                {selectedSub.discountCode && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--primary)' }}>
-                    <span>Coupon Rule:</span>
-                    <strong>{selectedSub.discountCode}</strong>
-                  </div>
-                )}
+                {selectedSub.discountCode && (() => {
+                  const rule = discounts.find((d) => d.code === selectedSub.discountCode);
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', padding: '6px 10px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#15803d', fontWeight: 700 }}>
+                        <span>Negotiated Discount:</span>
+                        <span>{selectedSub.discountCode}</span>
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#166534' }}>
+                        {rule ? `${rule.name} (${rule.type === 'percentage' ? `${rule.value}% off` : `$${rule.value} off`}) • Scope: ${rule.scope.replace('_', ' ')}` : 'Active on next recurring invoice'}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', fontWeight: 800, marginTop: '4px' }}>
                   <span>Total / Cycle:</span>
                   <span>${selectedSub.totalAmount.toFixed(2)}</span>
@@ -583,16 +628,114 @@ export default function SubscriptionsPage() {
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
-                    Discount / Coupon Code
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. ENTERPRISE20"
-                    value={formDiscountCode}
-                    onChange={(e) => setFormDiscountCode(e.target.value)}
-                    className="neu-inset neu-input"
-                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                      Discount / Coupon Deal (Scene 5)
+                    </label>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--primary)', fontWeight: 700 }}>
+                      Current Seats: {totalFormSeats}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '8px' }}>
+                    <select
+                      value={formDiscountCode}
+                      onChange={(e) => setFormDiscountCode(e.target.value)}
+                      className="neu-inset neu-input"
+                      style={{ fontSize: '0.82rem' }}
+                    >
+                      <option value="">-- Quick-Select Active Discount Rule --</option>
+                      {discounts.filter((d) => d.isActive).map((d) => (
+                        <option key={d.id} value={d.code}>
+                          {d.code}: {d.name} ({d.type === 'percentage' ? `${d.value}% off` : `$${d.value} off`} • min {d.minQuantity} seat{d.minQuantity > 1 ? 's' : ''})
+                        </option>
+                      ))}
+                    </select>
+
+                    <input
+                      type="text"
+                      placeholder="Or enter coupon (e.g. SEATBOOST10)"
+                      value={formDiscountCode}
+                      onChange={(e) => setFormDiscountCode(e.target.value.toUpperCase())}
+                      className="neu-inset neu-input"
+                      style={{ fontSize: '0.82rem', textTransform: 'uppercase' }}
+                    />
+                  </div>
+
+                  {/* Real-Time Live Validation Feedback Card */}
+                  {formDiscountCode.trim() ? (
+                    <div style={{ marginTop: '8px' }}>
+                      {discountValidation.valid ? (
+                        <div style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          background: '#f0fdf4',
+                          border: '1px solid #bbf7d0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '10px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#15803d', fontSize: '0.82rem' }}>
+                            <CheckCircle2 size={16} />
+                            <div>
+                              <strong>{discountValidation.rule.name}:</strong> applied! -${discountValidation.deduction.toFixed(2)} savings.
+                              <span style={{ fontSize: '0.74rem', color: '#166534', marginLeft: '6px' }}>
+                                (Scope: {discountValidation.rule.scope === 'specific_product' ? 'Specific Product' : 'Whole Subscription'})
+                              </span>
+                            </div>
+                          </div>
+                          <span style={{ fontSize: '0.76rem', fontWeight: 800, color: '#15803d', background: '#dcfce7', padding: '3px 8px', borderRadius: '6px' }}>
+                            VALID RULE
+                          </span>
+                        </div>
+                      ) : (
+                        <div style={{
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          background: '#fffbeb',
+                          border: '1px solid #fde68a',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: '10px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b45309', fontSize: '0.82rem' }}>
+                            <AlertCircle size={16} />
+                            <span>{discountValidation.message}</span>
+                          </div>
+
+                          {/* Scene 5 Volume Threshold helper button */}
+                          {discountValidation.message?.includes('Volume threshold') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const match = discountValidation.message.match(/at least (\d+) seats/);
+                                if (match && match[1]) {
+                                  autoBumpSeatsToQualify(parseInt(match[1]));
+                                }
+                              }}
+                              className="neu-btn"
+                              style={{
+                                padding: '4px 10px',
+                                fontSize: '0.76rem',
+                                color: '#b45309',
+                                fontWeight: 700,
+                                borderColor: '#fde68a'
+                              }}
+                            >
+                              ⚡ Unlock: Add Required Seats
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '6px', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                      💡 <em>Customer asks for a better price? Pick <strong>SEATBOOST10</strong> (3+ seats) or <strong>ENTERPRISE20</strong> (5+ seats) for instant volume savings.</em>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -673,12 +816,33 @@ export default function SubscriptionsPage() {
                 </div>
               </div>
 
-              {/* Total Calculation Display */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '16px', borderTop: '1px solid rgba(184, 194, 204, 0.3)', paddingTop: '14px' }}>
-                <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Estimated Cycle Amount (incl. 10% tax):</span>
-                <span style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--primary)' }}>
-                  ${calculateFormTotal().toFixed(2)}
-                </span>
+              {/* Detailed Financials Breakdown Display */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid rgba(184, 194, 204, 0.3)', paddingTop: '14px' }}>
+                <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+                    <span>Line Items Subtotal:</span>
+                    <span>${calculateFormFinancials().subtotal.toFixed(2)}</span>
+                  </div>
+
+                  {calculateFormFinancials().discountDeduction > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem', color: '#16a34a', fontWeight: 700 }}>
+                      <span>Volume Discount ({formDiscountCode}):</span>
+                      <span>-${calculateFormFinancials().discountDeduction.toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+                    <span>Automated Taxes (10% VAT):</span>
+                    <span>+${calculateFormFinancials().taxes.toFixed(2)}</span>
+                  </div>
+
+                  <div style={{ height: '1px', background: 'rgba(184, 194, 204, 0.4)', margin: '4px 0' }} />
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', fontWeight: 800, color: 'var(--primary)' }}>
+                    <span>Estimated Cycle Total:</span>
+                    <span>${calculateFormFinancials().grandTotal.toFixed(2)}</span>
+                  </div>
+                </div>
               </div>
 
               {/* Action Buttons */}

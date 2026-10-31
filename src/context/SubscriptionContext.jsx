@@ -290,6 +290,79 @@ export function SubscriptionProvider({ children, initialUser }) {
     return { due, alreadyBilled };
   };
 
+  // Universal Discount Validator: Scene 5
+  // "A customer wants a discount for taking more seats. A discount can apply to specific products or to whole subscriptions."
+  const validateDiscount = ({
+    code,
+    items = [],
+    subtotal = 0,
+    date = new Date().toISOString().split('T')[0]
+  }) => {
+    if (!code || !code.trim()) return { valid: false, message: '' };
+    const cleanCode = code.trim().toUpperCase();
+    const rule = discounts.find((d) => d.code.toUpperCase() === cleanCode);
+
+    if (!rule) {
+      return { valid: false, message: `Coupon code "${cleanCode}" does not exist.` };
+    }
+    if (!rule.isActive) {
+      return { valid: false, message: `Discount rule "${rule.code}" is currently deactivated or inactive.` };
+    }
+    if (rule.endDate && date > rule.endDate) {
+      return { valid: false, message: `Discount code "${rule.code}" expired on ${rule.endDate}.` };
+    }
+    if (rule.startDate && date < rule.startDate) {
+      return { valid: false, message: `Discount code "${rule.code}" is not valid until ${rule.startDate}.` };
+    }
+    if (rule.usageLimit !== undefined && rule.timesUsed >= rule.usageLimit) {
+      return { valid: false, message: `Discount limit reached: Capacity of ${rule.usageLimit} redemptions exhausted.` };
+    }
+
+    // Check volume threshold: "A customer wants a discount for taking more seats"
+    const totalQuantity = items.reduce((sum, it) => sum + (parseInt(it.quantity) || 1), 0);
+    if (rule.minQuantity && totalQuantity < rule.minQuantity) {
+      return {
+        valid: false,
+        message: `Volume threshold: Requires at least ${rule.minQuantity} seats/units (currently taking ${totalQuantity}). Add ${rule.minQuantity - totalQuantity} more to qualify!`
+      };
+    }
+
+    // Check minimum spend
+    if (rule.minAmount && subtotal < rule.minAmount) {
+      return {
+        valid: false,
+        message: `Minimum spend: Requires at least $${rule.minAmount.toFixed(2)} (current: $${subtotal.toFixed(2)}).`
+      };
+    }
+
+    // Calculate deduction based on Scope (specific_product vs whole_subscription)
+    let deduction = 0;
+    if (rule.scope === 'specific_product' && rule.targetProductId) {
+      const eligibleItems = items.filter((it) => it.productId === rule.targetProductId);
+      const eligibleSubtotal = eligibleItems.reduce((sum, it) => sum + (it.quantity * it.unitPrice), 0);
+      if (eligibleSubtotal <= 0) {
+        return {
+          valid: false,
+          message: `Applies specifically to target product, which is not present in this contract.`
+        };
+      }
+      deduction = rule.type === 'percentage'
+        ? (eligibleSubtotal * rule.value) / 100
+        : Math.min(rule.value, eligibleSubtotal);
+    } else {
+      deduction = rule.type === 'percentage'
+        ? (subtotal * rule.value) / 100
+        : Math.min(rule.value, subtotal);
+    }
+
+    return {
+      valid: true,
+      rule,
+      deduction,
+      message: `✅ "${rule.name}" applied: ${rule.type === 'percentage' ? `${rule.value}% off` : `$${rule.value} off`} (-$${deduction.toFixed(2)})`
+    };
+  };
+
   // Billing Day Engine: Scene 4 in Problem Statement
   // Automatically generates invoices for active subscriptions and prevents double billing
   const runBillingDay = (targetDateStr = new Date().toISOString().split('T')[0]) => {
@@ -298,6 +371,7 @@ export function SubscriptionProvider({ children, initialUser }) {
     let totalGeneratedAmount = 0;
     const newInvoicesList = [];
     const updatedSubIds = new Set();
+    const usedDiscountMap = {};
 
     due.forEach((sub) => {
       // Calculate subtotal from items
@@ -321,16 +395,20 @@ export function SubscriptionProvider({ children, initialUser }) {
         };
       });
 
-      // Calculate discounts
+      // Calculate discounts according to Scene 5
       let discountDeduction = 0;
+      let appliedDiscountRule = null;
       if (sub.discountCode) {
-        const discountRule = discounts.find((d) => d.code === sub.discountCode && d.isActive);
-        if (discountRule) {
-          if (discountRule.type === 'percentage') {
-            discountDeduction = (subtotal * discountRule.value) / 100;
-          } else {
-            discountDeduction = Math.min(discountRule.value, subtotal);
-          }
+        const validation = validateDiscount({
+          code: sub.discountCode,
+          items: sub.items,
+          subtotal,
+          date: targetDateStr
+        });
+        if (validation.valid) {
+          discountDeduction = validation.deduction;
+          appliedDiscountRule = validation.rule;
+          usedDiscountMap[appliedDiscountRule.code] = (usedDiscountMap[appliedDiscountRule.code] || 0) + 1;
         }
       }
 
@@ -356,7 +434,7 @@ export function SubscriptionProvider({ children, initialUser }) {
         subtotal,
         taxTotal,
         discountAmount: discountDeduction,
-        discountCode: sub.discountCode || null,
+        discountCode: appliedDiscountRule ? appliedDiscountRule.code : null,
         total,
         amountPaid: 0,
         balance: total,
@@ -389,6 +467,25 @@ export function SubscriptionProvider({ children, initialUser }) {
           return sub;
         })
       );
+
+      // 3. Increment discount usage and auto-deactivate exhausted rules (Scene 5: "stop when it expires or runs out")
+      if (Object.keys(usedDiscountMap).length > 0) {
+        setDiscounts((prev) =>
+          prev.map((d) => {
+            const count = usedDiscountMap[d.code];
+            if (count) {
+              const newTimesUsed = (d.timesUsed || 0) + count;
+              const hasRunOut = d.usageLimit && newTimesUsed >= d.usageLimit;
+              return {
+                ...d,
+                timesUsed: newTimesUsed,
+                isActive: hasRunOut ? false : d.isActive
+              };
+            }
+            return d;
+          })
+        );
+      }
 
       showToast(
         `⚡ Billing Day Run: ${newInvoicesList.length} invoices generated ($${totalGeneratedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })})! Next billing dates advanced.`,
@@ -483,6 +580,14 @@ export function SubscriptionProvider({ children, initialUser }) {
     showToast(`Discount rule "${newDiscount.code}" created!`, 'success');
   };
 
+  // Toggle Discount Status (Admin Action)
+  const toggleDiscountStatus = (discountId) => {
+    setDiscounts((prev) =>
+      prev.map((d) => (d.id === discountId ? { ...d, isActive: !d.isActive } : d))
+    );
+    showToast('Discount status updated successfully', 'info');
+  };
+
   // Send Overdue Reminder
   const sendPaymentReminder = (invoiceId) => {
     const inv = invoices.find((i) => i.id === invoiceId);
@@ -535,6 +640,8 @@ export function SubscriptionProvider({ children, initialUser }) {
         sendInvoice,
         recordPayment,
         createDiscount,
+        toggleDiscountStatus,
+        validateDiscount,
         sendPaymentReminder,
         resetToDefaultData
       }}
