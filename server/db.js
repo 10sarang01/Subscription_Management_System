@@ -105,6 +105,29 @@ async function initDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_product_plans_product_id ON product_plans(product_id);
     CREATE INDEX IF NOT EXISTS idx_product_plans_active ON product_plans(is_active);
+
+    -- Discounts table for Scene 5 (A customer asks for a better price)
+    CREATE TABLE IF NOT EXISTS discounts (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('percentage', 'fixed')),
+      value REAL NOT NULL,
+      scope TEXT NOT NULL CHECK (scope IN ('whole_subscription', 'specific_product')),
+      target_product_id TEXT,
+      min_quantity INTEGER NOT NULL DEFAULT 1,
+      min_amount REAL NOT NULL DEFAULT 0,
+      start_date TEXT,
+      end_date TEXT,
+      usage_limit INTEGER NOT NULL DEFAULT 100,
+      times_used INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_discounts_code ON discounts(code);
+    CREATE INDEX IF NOT EXISTS idx_discounts_active ON discounts(is_active);
   `);
 
   // Ensure Admin exists
@@ -151,6 +174,103 @@ async function initDatabase() {
     console.log('✅ SQLite users table initialized and seeded with Admin, Staff, and Customer accounts.');
   } else {
     console.log('ℹ️ SQLite database already contains admin user.');
+  }
+
+  // Ensure Default Hardcoded Discounts exist in SQLite database
+  const discountCheck = db.prepare("SELECT COUNT(*) as count FROM discounts").get();
+  if (!discountCheck || discountCheck.count === 0) {
+    const seedDiscounts = [
+      {
+        id: 'disc-1',
+        code: 'ENTERPRISE20',
+        name: 'Enterprise Volume License',
+        type: 'percentage',
+        value: 20,
+        scope: 'whole_subscription',
+        target_product_id: null,
+        min_quantity: 5,
+        min_amount: 1000,
+        start_date: '2026-01-01',
+        end_date: '2026-12-31',
+        usage_limit: 50,
+        times_used: 14,
+        is_active: 1
+      },
+      {
+        id: 'disc-2',
+        code: 'ODOO60BOOST',
+        name: 'Odoo Variant Modernization Discount',
+        type: 'fixed',
+        value: 60,
+        scope: 'specific_product',
+        target_product_id: 'prod-1',
+        min_quantity: 2,
+        min_amount: 300,
+        start_date: '2026-02-01',
+        end_date: '2026-11-30',
+        usage_limit: 30,
+        times_used: 19,
+        is_active: 1
+      },
+      {
+        id: 'disc-3',
+        code: 'STARTUP500',
+        name: 'Incubator Growth Grant',
+        type: 'fixed',
+        value: 500,
+        scope: 'whole_subscription',
+        target_product_id: null,
+        min_quantity: 1,
+        min_amount: 2000,
+        start_date: '2026-01-01',
+        end_date: '2026-08-31',
+        usage_limit: 10,
+        times_used: 10,
+        is_active: 0
+      },
+      {
+        id: 'disc-4',
+        code: 'SEATBOOST10',
+        name: 'Multi-Seat Growth Deal (Scene 5)',
+        type: 'percentage',
+        value: 10,
+        scope: 'whole_subscription',
+        target_product_id: null,
+        min_quantity: 3,
+        min_amount: 500,
+        start_date: '2026-01-01',
+        end_date: '2026-12-31',
+        usage_limit: 100,
+        times_used: 5,
+        is_active: 1
+      }
+    ];
+
+    const insertDisc = db.prepare(`
+      INSERT INTO discounts (id, code, name, type, value, scope, target_product_id, min_quantity, min_amount, start_date, end_date, usage_limit, times_used, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    seedDiscounts.forEach((d) => {
+      insertDisc.run(
+        d.id,
+        d.code,
+        d.name,
+        d.type,
+        d.value,
+        d.scope,
+        d.target_product_id,
+        d.min_quantity,
+        d.min_amount,
+        d.start_date,
+        d.end_date,
+        d.usage_limit,
+        d.times_used,
+        d.is_active
+      );
+    });
+
+    console.log('✅ SQLite discounts table initialized and seeded with default discounts.');
   }
 }
 
@@ -500,6 +620,127 @@ async function deleteProductPlan(planId) {
   return db.prepare('DELETE FROM product_plans WHERE id = ?').run(planId);
 }
 
+// ─── Discount query functions (Scene 5 Live Persistence) ───────────────────
+
+function mapDiscountRow(r) {
+  return {
+    id: r.id,
+    code: r.code,
+    name: r.name,
+    type: r.type,
+    value: r.value,
+    scope: r.scope,
+    targetProductId: r.target_product_id,
+    minQuantity: r.min_quantity,
+    minAmount: r.min_amount,
+    startDate: r.start_date,
+    endDate: r.end_date,
+    usageLimit: r.usage_limit,
+    timesUsed: r.times_used,
+    isActive: Boolean(r.is_active),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  };
+}
+
+async function getAllDiscounts() {
+  const rows = db.prepare('SELECT * FROM discounts ORDER BY created_at DESC').all();
+  return rows.map(mapDiscountRow);
+}
+
+async function getDiscountByCode(code) {
+  if (!code) return null;
+  const row = db.prepare('SELECT * FROM discounts WHERE code = ? COLLATE NOCASE').get(code.trim());
+  return row ? mapDiscountRow(row) : null;
+}
+
+async function getDiscountById(id) {
+  const row = db.prepare('SELECT * FROM discounts WHERE id = ?').get(id);
+  return row ? mapDiscountRow(row) : null;
+}
+
+async function createDiscount({
+  id,
+  code,
+  name,
+  type,
+  value,
+  scope,
+  targetProductId,
+  minQuantity,
+  minAmount,
+  startDate,
+  endDate,
+  usageLimit
+}) {
+  const discId = id || `disc-${Date.now()}`;
+  const cleanCode = (code || '').toUpperCase().trim();
+  const cleanName = (name || '').trim();
+  const cleanType = type === 'fixed' ? 'fixed' : 'percentage';
+  const cleanValue = Math.max(0, parseFloat(value) || 0);
+  const cleanScope = scope === 'specific_product' ? 'specific_product' : 'whole_subscription';
+  const cleanTargetProdId = cleanScope === 'specific_product' ? (targetProductId || null) : null;
+  const cleanMinQty = Math.max(1, parseInt(minQuantity, 10) || 1);
+  const cleanMinAmt = Math.max(0, parseFloat(minAmount) || 0);
+  const cleanUsageLimit = Math.max(1, parseInt(usageLimit, 10) || 100);
+
+  const stmt = db.prepare(`
+    INSERT INTO discounts (id, code, name, type, value, scope, target_product_id, min_quantity, min_amount, start_date, end_date, usage_limit, times_used, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+  `);
+
+  stmt.run(
+    discId,
+    cleanCode,
+    cleanName,
+    cleanType,
+    cleanValue,
+    cleanScope,
+    cleanTargetProdId,
+    cleanMinQty,
+    cleanMinAmt,
+    startDate || null,
+    endDate || null,
+    cleanUsageLimit
+  );
+
+  return getDiscountById(discId);
+}
+
+async function toggleDiscountStatus(id, isActive) {
+  const newActive = isActive !== undefined ? (isActive ? 1 : 0) : null;
+  if (newActive !== null) {
+    db.prepare('UPDATE discounts SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newActive, id);
+  } else {
+    db.prepare('UPDATE discounts SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+  }
+  return getDiscountById(id);
+}
+
+async function incrementDiscountUsage(code, count = 1) {
+  if (!code) return null;
+  const cleanCode = code.toUpperCase().trim();
+  const disc = await getDiscountByCode(cleanCode);
+  if (!disc) return null;
+
+  const newCount = disc.timesUsed + count;
+  const shouldDeactivate = disc.usageLimit && newCount >= disc.usageLimit;
+
+  db.prepare(`
+    UPDATE discounts 
+    SET times_used = ?, 
+        is_active = CASE WHEN ? = 1 THEN 0 ELSE is_active END,
+        updated_at = CURRENT_TIMESTAMP 
+    WHERE id = ?
+  `).run(newCount, shouldDeactivate ? 1 : 0, disc.id);
+
+  return getDiscountById(disc.id);
+}
+
+async function deleteDiscount(id) {
+  return db.prepare('DELETE FROM discounts WHERE id = ?').run(id);
+}
+
 module.exports = {
   db,
   initDatabase,
@@ -520,5 +761,13 @@ module.exports = {
   createProductPlan,
   updateProductPlan,
   toggleProductPlanStatus,
-  deleteProductPlan
+  deleteProductPlan,
+  // Discounts
+  getAllDiscounts,
+  getDiscountByCode,
+  getDiscountById,
+  createDiscount,
+  toggleDiscountStatus,
+  incrementDiscountUsage,
+  deleteDiscount
 };
