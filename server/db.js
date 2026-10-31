@@ -721,6 +721,11 @@ async function deleteDiscount(id) {
   return db.prepare('DELETE FROM discounts WHERE id = ?').run(id);
 }
 
+async function getVariantsByProductId(productId) {
+  const product = db.prepare('SELECT variants_json FROM products WHERE id = ?').get(productId);
+  return product && product.variants_json ? JSON.parse(product.variants_json) : [];
+}
+
 module.exports = {
   db,
   initDatabase,
@@ -742,10 +747,8 @@ module.exports = {
   updateProductPlan,
   toggleProductPlanStatus,
   deleteProductPlan,
-<<<<<<< HEAD
   // Product variants
-  getVariantsByProductId
-=======
+  getVariantsByProductId,
   // Discounts
   getAllDiscounts,
   getDiscountByCode,
@@ -754,5 +757,4 @@ module.exports = {
   toggleDiscountStatus,
   incrementDiscountUsage,
   deleteDiscount
->>>>>>> c08cb7c576aa584d90aa88cc7ba1b54cf7955300
 };
