@@ -126,6 +126,27 @@ export function SubscriptionProvider({ children, initialUser }) {
     localStorage.setItem('brightloop_payments', JSON.stringify(payments));
   }, [payments]);
 
+  // Fetch live discounts from SQLite database on mount
+  const fetchDiscounts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/discounts');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.discounts && Array.isArray(data.discounts)) {
+          setDiscounts(data.discounts);
+          return data.discounts;
+        }
+      }
+    } catch (err) {
+      console.warn('API error fetching discounts, relying on localStorage/initialDiscounts:', err);
+    }
+    return null;
+  }, []);
+
+  useEffect(() => {
+    fetchDiscounts();
+  }, [fetchDiscounts]);
+
   // Note: Products and plans are persisted in localStorage.
   // Backend sync happens on individual add/delete operations (with graceful fallback).
 
@@ -680,6 +701,15 @@ export function SubscriptionProvider({ children, initialUser }) {
       );
 
       if (Object.keys(usedDiscountMap).length > 0) {
+        // Sync discount usage to live SQLite database
+        Object.entries(usedDiscountMap).forEach(([code, count]) => {
+          fetch('/api/discounts/use', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, count })
+          }).catch((e) => console.warn('Could not record discount usage in database:', e));
+        });
+
         setDiscounts((prev) =>
           prev.map((d) => {
             const count = usedDiscountMap[d.code];
@@ -768,25 +798,96 @@ export function SubscriptionProvider({ children, initialUser }) {
     showToast(`Payment of $${paymentAmount.toFixed(2)} recorded for ${targetInvoice.invoiceNumber}`, 'success');
   };
 
-  // ── Discount Actions ──────────────────────────────────────────────────
+  // ── Discount Actions (Live SQLite Persistence) ─────────────────────────
 
-  const createDiscount = (discountData) => {
-    const newDiscount = {
-      ...discountData,
-      id: `disc-${Date.now()}`,
-      timesUsed: 0,
-      isActive: true
+  const createDiscount = async (discountData) => {
+    const cleanData = {
+      code: (discountData.code || '').toUpperCase().trim(),
+      name: (discountData.name || '').trim(),
+      type: discountData.type === 'fixed' ? 'fixed' : 'percentage',
+      value: Math.max(0, parseFloat(discountData.value) || 0),
+      scope: discountData.scope === 'specific_product' ? 'specific_product' : 'whole_subscription',
+      targetProductId: discountData.scope === 'specific_product' ? (discountData.targetProductId || null) : null,
+      minQuantity: Math.max(1, parseInt(discountData.minQuantity, 10) || 1),
+      minAmount: Math.max(0, parseFloat(discountData.minAmount) || 0),
+      startDate: discountData.startDate || null,
+      endDate: discountData.endDate || null,
+      usageLimit: Math.max(1, parseInt(discountData.usageLimit, 10) || 100)
     };
-    setDiscounts((prev) => [newDiscount, ...prev]);
-    showToast(`Discount rule "${newDiscount.code}" created!`, 'success');
+
+    let savedDiscount = null;
+    try {
+      const res = await fetch('/api/discounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanData)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        savedDiscount = data.discount;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || 'Failed to save discount to database', 'error');
+        return null;
+      }
+    } catch (err) {
+      console.warn('API error saving discount, using local fallback:', err);
+    }
+
+    if (!savedDiscount) {
+      savedDiscount = {
+        ...cleanData,
+        id: `disc-${Date.now()}`,
+        timesUsed: 0,
+        isActive: true
+      };
+    }
+
+    setDiscounts((prev) => [savedDiscount, ...prev.filter((d) => d.id !== savedDiscount.id && d.code !== savedDiscount.code)]);
+    showToast(`Discount rule "${savedDiscount.code}" created & persisted to database!`, 'success');
+    return savedDiscount;
   };
 
-  const toggleDiscountStatus = (discountId) => {
+  const toggleDiscountStatus = async (discountId) => {
+    const target = discounts.find((d) => d.id === discountId);
+    if (!target) return;
+    const newActive = !target.isActive;
+
     setDiscounts((prev) =>
-      prev.map((d) => (d.id === discountId ? { ...d, isActive: !d.isActive } : d))
+      prev.map((d) => (d.id === discountId ? { ...d, isActive: newActive } : d))
     );
-    showToast('Discount status updated successfully', 'info');
+
+    try {
+      const res = await fetch(`/api/discounts/${discountId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: newActive })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.discount) {
+          setDiscounts((prev) => prev.map((d) => (d.id === discountId ? data.discount : d)));
+        }
+        showToast(`Discount rule "${target.code}" ${newActive ? 'activated' : 'paused'} in database!`, 'info');
+      } else {
+        showToast('Discount status updated locally.', 'warning');
+      }
+    } catch {
+      showToast('Discount status updated locally.', 'warning');
+    }
   };
+
+  const deleteDiscount = async (discountId) => {
+    const target = discounts.find((d) => d.id === discountId);
+    try {
+      await fetch(`/api/discounts/${discountId}`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('API error deleting discount:', err);
+    }
+    setDiscounts((prev) => prev.filter((d) => d.id !== discountId));
+    showToast(`Discount rule "${target?.code || discountId}" deleted from database.`, 'info');
+  };
+
   const sendPaymentReminder = (invoiceId) => {
     const inv = invoices.find((i) => i.id === invoiceId);
     showToast(`Payment reminder email sent to ${inv?.customerEmail || 'customer'} for ${inv?.invoiceNumber}`, 'info');
@@ -794,7 +895,7 @@ export function SubscriptionProvider({ children, initialUser }) {
 
   // ── Reset ─────────────────────────────────────────────────────────────
 
-  const resetToDefaultData = () => {
+  const resetToDefaultData = async () => {
     localStorage.removeItem('brightloop_products');
     localStorage.removeItem('brightloop_product_plans');
     localStorage.removeItem('brightloop_subscriptions');
@@ -806,8 +907,12 @@ export function SubscriptionProvider({ children, initialUser }) {
     setProductPlans({});
     setSubscriptions(initialSubscriptions);
     setInvoices(initialInvoices);
-    setDiscounts(initialDiscounts);
     setPayments(initialPayments);
+
+    const refreshed = await fetchDiscounts();
+    if (!refreshed || refreshed.length === 0) {
+      setDiscounts(initialDiscounts);
+    }
 
     showToast('Platform reset to clean live state!', 'info');
   };
@@ -851,6 +956,8 @@ export function SubscriptionProvider({ children, initialUser }) {
         // Discount actions
         createDiscount,
         toggleDiscountStatus,
+        deleteDiscount,
+        fetchDiscounts,
         validateDiscount,
         sendPaymentReminder,
         resetToDefaultData

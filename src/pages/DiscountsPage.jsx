@@ -11,12 +11,14 @@ import {
   AlertCircle,
   HelpCircle,
   Sliders,
-  Sparkles
+  Sparkles,
+  Trash2,
+  Database
 } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
 
 export default function DiscountsPage() {
-  const { discounts, products, createDiscount, toggleDiscountStatus, currentPersona } = useSubscription();
+  const { discounts, products, createDiscount, toggleDiscountStatus, deleteDiscount, currentPersona } = useSubscription();
 
   const [showModal, setShowModal] = useState(false);
   const isAdmin = currentPersona.role === 'admin';
@@ -41,9 +43,9 @@ export default function DiscountsPage() {
     usageLimit: 50
   });
 
-  const handleCreateSubmit = (e) => {
+  const handleCreateSubmit = async (e) => {
     e.preventDefault();
-    createDiscount({
+    const result = await createDiscount({
       code: discountForm.code.toUpperCase().trim(),
       name: discountForm.name.trim(),
       type: discountForm.type,
@@ -56,20 +58,22 @@ export default function DiscountsPage() {
       endDate: discountForm.endDate,
       usageLimit: parseInt(discountForm.usageLimit) || 100
     });
-    setDiscountForm({
-      code: '',
-      name: '',
-      type: 'percentage',
-      value: 15,
-      scope: 'whole_subscription',
-      targetProductId: products[0]?.id || 'prod-1',
-      minQuantity: 1,
-      minAmount: 0,
-      startDate: new Date().toISOString().split('T')[0],
-      endDate: '2026-12-31',
-      usageLimit: 50
-    });
-    setShowModal(false);
+    if (result) {
+      setDiscountForm({
+        code: '',
+        name: '',
+        type: 'percentage',
+        value: 15,
+        scope: 'whole_subscription',
+        targetProductId: products[0]?.id || 'prod-1',
+        minQuantity: 1,
+        minAmount: 0,
+        startDate: new Date().toISOString().split('T')[0],
+        endDate: '2026-12-31',
+        usageLimit: 50
+      });
+      setShowModal(false);
+    }
   };
 
   // Run simulation calculation
@@ -295,9 +299,14 @@ export default function DiscountsPage() {
 
       {/* Rules Directory Table */}
       <div className="neu-flat" style={{ padding: '28px 30px' }}>
-        <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '16px' }}>
-          Configured Discount Rules ({discounts.length})
-        </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0 }}>
+            Configured Discount Rules ({discounts.length})
+          </h3>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 700, padding: '4px 10px', borderRadius: '999px', background: 'rgba(34, 197, 94, 0.12)', color: '#16a34a' }}>
+            <Database size={13} /> Live SQLite Database
+          </span>
+        </div>
 
         <div className="table-container">
           <table className="neu-table">
@@ -378,18 +387,36 @@ export default function DiscountsPage() {
                     </td>
                     <td>
                       {isAdmin ? (
-                        <button
-                          onClick={() => toggleDiscountStatus(d.id)}
-                          className="neu-btn"
-                          style={{
-                            padding: '6px 12px',
-                            fontSize: '0.78rem',
-                            fontWeight: 700,
-                            color: d.isActive ? 'var(--error)' : 'var(--primary)'
-                          }}
-                        >
-                          {d.isActive ? 'Pause' : 'Activate'}
-                        </button>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <button
+                            onClick={() => toggleDiscountStatus(d.id)}
+                            className="neu-btn"
+                            style={{
+                              padding: '6px 12px',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              color: d.isActive ? 'var(--error)' : 'var(--primary)'
+                            }}
+                          >
+                            {d.isActive ? 'Pause' : 'Activate'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Delete discount rule "${d.code}" from database?`)) {
+                                deleteDiscount(d.id);
+                              }
+                            }}
+                            className="neu-btn"
+                            title="Delete Discount Rule"
+                            style={{
+                              padding: '6px 8px',
+                              fontSize: '0.78rem',
+                              color: 'var(--text-muted)'
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       ) : (
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Admin Only</span>
                       )}
