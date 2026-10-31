@@ -61,6 +61,8 @@ app.use(express.json());
 // Initialize SQLite database
 initDatabase().catch(err => console.error('Failed to init SQLite DB:', err));
 
+const subscriptionRoutes = require('./subscriptionRoutes');
+
 // Password validation helper
 function validatePassword(password) {
   if (!password || password.length <= 8) {
@@ -111,6 +113,8 @@ function requireAdmin(req, res, next) {
   }
   next();
 }
+
+app.use('/api/subscriptions', authenticateToken, subscriptionRoutes);
 
 // ─── Auth Routes ──────────────────────────────────────────────────────────
 

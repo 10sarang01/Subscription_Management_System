@@ -3,131 +3,6 @@
 // is stored exclusively in brightloop.db (SQLite) via the backend API.
 // This file only contains persona definitions for role switching.
 
-export const initialQuotationTemplates = [
-  {
-    id: 'tmpl-1',
-    name: 'Standard SaaS Monthly Bundle',
-    validityDays: 30,
-    planId: 'plan-1',
-    items: [
-      { productId: 'prod-1', variant: 'Standard Edition', quantity: 2, unitPrice: 240 },
-      { productId: 'prod-2', variant: 'Standard Capacity', quantity: 1, unitPrice: 95 }
-    ]
-  },
-  {
-    id: 'tmpl-2',
-    name: 'Odoo Brand Enterprise Annual Package',
-    validityDays: 15,
-    planId: 'plan-2',
-    items: [
-      { productId: 'prod-1', variant: 'Odoo Brand Edition', quantity: 5, unitPrice: 300 }, // $240 + $60 Odoo variant
-      { productId: 'prod-3', variant: '500 GB Tier', quantity: 2, unitPrice: 110 },
-      { productId: 'prod-4', variant: '24/7 Global', quantity: 1, unitPrice: 500 }
-    ]
-  }
-];
-
-export const initialSubscriptions = [
-  {
-    id: 'sub-1',
-    subNumber: 'SUB-2026-001',
-    customerName: 'Corner Bakery & Cafe',
-    customerEmail: 'alice@cornerbakery.com',
-    planId: 'plan-1',
-    planName: 'Monthly Professional Plan',
-    billingFrequency: 'monthly',
-    startDate: '2026-03-01',
-    expiryDate: '2027-02-28',
-    nextBillingDate: '2026-11-01',
-    paymentTerms: 'Net 15',
-    status: 'Active', // Draft -> Quotation -> Confirmed -> Active -> Closed (or Paused)
-    items: [
-      { productId: 'prod-1', name: 'Brightloop ERP Business Core', variant: 'Standard Edition', quantity: 3, unitPrice: 240, taxRate: 0.10 },
-      { productId: 'prod-3', name: 'High-Performance Cloud Database Storage', variant: '100 GB Tier', quantity: 1, unitPrice: 65, taxRate: 0.10 }
-    ],
-    discountCode: 'SEATBOOST10',
-    totalAmount: 785
-  },
-  {
-    id: 'sub-2',
-    subNumber: 'SUB-2026-002',
-    customerName: 'Apex Logistics Global',
-    customerEmail: 'marcus@apexlogistics.com',
-    planId: 'plan-2',
-    planName: 'Annual Enterprise Contract',
-    billingFrequency: 'yearly',
-    startDate: '2026-01-15',
-    expiryDate: '2027-01-14',
-    nextBillingDate: '2027-01-15',
-    paymentTerms: 'Net 30',
-    status: 'Active',
-    items: [
-      { productId: 'prod-1', name: 'Brightloop ERP Business Core', variant: 'Odoo Brand Edition', quantity: 10, unitPrice: 300, taxRate: 0.10 },
-      { productId: 'prod-4', name: 'Enterprise 24/7 Priority SLA & Dedicated TAM', variant: '24/7 Global', quantity: 1, unitPrice: 500, taxRate: 0.10 }
-    ],
-    discountCode: 'ENTERPRISE20',
-    totalAmount: 3150
-  },
-  {
-    id: 'sub-3',
-    subNumber: 'QT-2026-089',
-    customerName: 'Cascade Health Networks',
-    customerEmail: 'billing@cascadehealth.org',
-    planId: 'plan-2',
-    planName: 'Annual Enterprise Contract',
-    billingFrequency: 'yearly',
-    startDate: '2026-11-15',
-    expiryDate: '2027-11-14',
-    nextBillingDate: '2026-11-15',
-    paymentTerms: 'Net 30',
-    status: 'Quotation', // Moves to Confirmed -> Active
-    items: [
-      { productId: 'prod-1', name: 'Brightloop ERP Business Core', variant: 'Standard Edition', quantity: 8, unitPrice: 240, taxRate: 0.10 },
-      { productId: 'prod-2', name: 'Advanced Analytics & AI Forecasting Add-on', variant: 'Unlimited Seats', quantity: 1, unitPrice: 145, taxRate: 0.10 }
-    ],
-    discountCode: '',
-    totalAmount: 2065
-  },
-  {
-    id: 'sub-4',
-    subNumber: 'SUB-2026-003',
-    customerName: 'Metro Urban Retailers',
-    customerEmail: 'finance@metrourban.com',
-    planId: 'plan-1',
-    planName: 'Monthly Professional Plan',
-    billingFrequency: 'monthly',
-    startDate: '2026-02-01',
-    expiryDate: '2026-12-31',
-    nextBillingDate: '2026-10-25',
-    paymentTerms: 'Due upon receipt',
-    status: 'Active',
-    items: [
-      { productId: 'prod-1', name: 'Brightloop ERP Business Core', variant: 'Odoo Brand Edition', quantity: 2, unitPrice: 300, taxRate: 0.08 }
-    ],
-    discountCode: '',
-    totalAmount: 648
-  },
-  {
-    id: 'sub-5',
-    subNumber: 'QT-2026-092',
-    customerName: 'Zephyr Creative Studio',
-    customerEmail: 'hello@zephyrstudio.io',
-    planId: 'plan-3',
-    planName: 'Startup Weekly Pilot Plan',
-    billingFrequency: 'weekly',
-    startDate: '2026-11-05',
-    expiryDate: '2026-12-05',
-    nextBillingDate: '2026-11-05',
-    paymentTerms: 'Due upon receipt',
-    status: 'Draft',
-    items: [
-      { productId: 'prod-1', name: 'Brightloop ERP Business Core', variant: 'Standard Edition', quantity: 1, unitPrice: 240, taxRate: 0.10 }
-    ],
-    discountCode: '',
-    totalAmount: 264
-  }
-];
-
 export const initialInvoices = [
   {
     id: 'inv-1',
@@ -232,7 +107,7 @@ export const initialDiscounts = [
     code: 'ODOO60BOOST',
     name: 'Odoo Variant Modernization Discount',
     type: 'fixed',
-    value: 60, // $60 off
+    value: 60, // ₹60 off
     scope: 'specific_product',
     targetProductId: 'prod-1',
     minQuantity: 2,

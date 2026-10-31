@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   FileText,
@@ -23,6 +23,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
+import { formatINR } from '../utils/currency';
 const DEFAULT_QUOTE_VALIDITY_DAYS = 30;
 
 function getTodayDateString() {
@@ -52,27 +53,23 @@ function addYearsToDateString(dateString, years) {
 export default function SubscriptionsPage() {
   const {
     subscriptions,
-    productPlans,
-    products,
-    discounts,
-    quotationTemplates,
+    subscriptionsLoading,
+    subscriptionsError,
+    subscriptionOptions,
+    subscriptionOptionsLoading,
+    subscriptionOptionsError,
     createSubscription,
     updateSubscriptionStatus,
     runBillingDay,
     validateDiscount
   } = useSubscription();
 
-  // Flatten all active product plans into a single list for the plan selector
-  const allActivePlans = useMemo(() => {
-    const result = [];
-    Object.entries(productPlans).forEach(([productId, plans]) => {
-      const product = products.find(p => p.id === productId);
-      (plans || []).filter(pl => pl.isActive).forEach(plan => {
-        result.push({ ...plan, productName: product?.name || 'Unknown Product' });
-      });
-    });
-    return result;
-  }, [productPlans, products]);
+  const products = subscriptionOptions.products;
+  const discounts = subscriptionOptions.discounts;
+  const quotationTemplates = subscriptionOptions.templates;
+
+  // Plans, products, customers and templates are read from Brightloop.
+  const allActivePlans = useMemo(() => subscriptionOptions.plans, [subscriptionOptions.plans]);
 
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedSub, setSelectedSub] = useState(null);
@@ -80,29 +77,26 @@ export default function SubscriptionsPage() {
 
   // New Quote / Subscription state
   const [formCustomer, setFormCustomer] = useState('');
+  const [formCustomerId, setFormCustomerId] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [formPlanId, setFormPlanId] = useState(allActivePlans[0]?.id || '');
+  const [formTemplateId, setFormTemplateId] = useState('');
   const [formPaymentTerms, setFormPaymentTerms] = useState('Net 30');
   const [formDiscountCode, setFormDiscountCode] = useState('');
-  const [formValidityDays, setFormValidityDays] = useState(DEFAULT_QUOTE_VALIDITY_DAYS);
+  const [formValidityDays, setFormValidityDays] = useState(subscriptionOptions.defaultValidityDays || DEFAULT_QUOTE_VALIDITY_DAYS);
   const [formQuoteValidUntil, setFormQuoteValidUntil] = useState(() =>
-    addDaysToDateString(getTodayDateString(), DEFAULT_QUOTE_VALIDITY_DAYS)
+    addDaysToDateString(getTodayDateString(), subscriptionOptions.defaultValidityDays || DEFAULT_QUOTE_VALIDITY_DAYS)
   );
   const [formStartDate, setFormStartDate] = useState(() => getTodayDateString());
   const [formExpiryDate, setFormExpiryDate] = useState(() =>
     addYearsToDateString(getTodayDateString(), 1)
   );
   const [formError, setFormError] = useState('');
-  const [formItems, setFormItems] = useState([
-    {
-      productId: products[0]?.id || 'prod-1',
-      name: products[0]?.name || 'Software Product',
-      variant: 'Standard Edition',
-      quantity: 1,
-      unitPrice: products[0]?.salesPrice || 0,
-      taxRate: 0.10
-    }
-  ]);
+  const [formItems, setFormItems] = useState([]);
+
+  useEffect(() => {
+    if (!formPlanId && allActivePlans[0]) setFormPlanId(allActivePlans[0].id);
+  }, [allActivePlans, formPlanId]);
 
   // Filter subscriptions
   const filteredSubs = subscriptions.filter((s) => {
@@ -112,7 +106,7 @@ export default function SubscriptionsPage() {
 
   // Apply a template
   const applyTemplate = (template) => {
-    const templatePlan = allActivePlans.find((p) => p.id === template.planId) || allActivePlans[0];
+    const templatePlan = allActivePlans.find((p) => String(p.id) === String(template.planId)) || allActivePlans[0];
     if (templatePlan) setFormPlanId(templatePlan.id);
     const today = getTodayDateString();
     const requestedValidityDays = Number.parseInt(template.validityDays, 10);
@@ -120,7 +114,9 @@ export default function SubscriptionsPage() {
       ? requestedValidityDays
       : DEFAULT_QUOTE_VALIDITY_DAYS;
     setFormCustomer('');
+    setFormCustomerId('');
     setFormEmail('');
+    setFormTemplateId(template.id);
     setFormPaymentTerms('Net 30');
     setFormDiscountCode('');
     setFormValidityDays(validityDays);
@@ -132,11 +128,13 @@ export default function SubscriptionsPage() {
       const prod = products.find((p) => p.id === item.productId);
       return {
         productId: item.productId,
-        name: prod?.name || 'Software Product',
+        templateLineId: item.templateLineId ?? null,
+        name: prod?.name || item.productName || 'Product',
+        variantId: item.variantId ?? null,
         variant: item.variant || 'Standard',
         quantity: Math.max(1, Number(item.quantity) || 1),
         unitPrice: Math.max(0, Number(item.unitPrice) || 0),
-        taxRate: Number.isFinite(Number(item.taxRate)) ? Number(item.taxRate) : 0.10
+        taxRate: Number.isFinite(Number(item.taxRate)) ? Number(item.taxRate) : Number(prod?.taxRate) || 0
       };
     });
     setFormItems(mappedItems);
@@ -147,12 +145,15 @@ export default function SubscriptionsPage() {
     const today = getTodayDateString();
     const defaultProduct = products[0];
     setFormCustomer('');
+    setFormCustomerId('');
     setFormEmail('');
+    setFormTemplateId('');
     setFormPlanId(allActivePlans[0]?.id || '');
     setFormPaymentTerms('Net 30');
     setFormDiscountCode('');
-    setFormValidityDays(DEFAULT_QUOTE_VALIDITY_DAYS);
-    setFormQuoteValidUntil(addDaysToDateString(today, DEFAULT_QUOTE_VALIDITY_DAYS));
+    const defaultValidity = subscriptionOptions.defaultValidityDays || DEFAULT_QUOTE_VALIDITY_DAYS;
+    setFormValidityDays(defaultValidity);
+    setFormQuoteValidUntil(addDaysToDateString(today, defaultValidity));
     setFormStartDate(today);
     setFormExpiryDate(addYearsToDateString(today, 1));
     setFormError('');
@@ -160,10 +161,11 @@ export default function SubscriptionsPage() {
       setFormItems([{
         productId: defaultProduct.id,
         name: defaultProduct.name,
+        variantId: defaultProduct.variants?.[0]?.variantId ?? null,
         variant: defaultProduct.variants?.[0]?.name || 'Standard Edition',
         quantity: 1,
-        unitPrice: Number(defaultProduct.salesPrice) || 0,
-        taxRate: 0.10
+        unitPrice: (Number(defaultProduct.salesPrice) || 0) + (Number(defaultProduct.variants?.[0]?.priceOffset) || 0),
+        taxRate: Number(defaultProduct.taxRate) || 0
       }]);
     } else {
       setFormItems([]);
@@ -185,16 +187,18 @@ export default function SubscriptionsPage() {
       : '');
   };
   const addItemRow = () => {
-    const defaultProd = products[0] || { id: 'custom', name: 'Software Item', salesPrice: 100, variants: [] };
+    const defaultProd = products[0];
+    if (!defaultProd) return;
     setFormItems([
       ...formItems,
       {
         productId: defaultProd.id,
         name: defaultProd.name,
+        variantId: defaultProd.variants?.[0]?.variantId ?? null,
         variant: defaultProd.variants?.[0]?.name || 'Standard Edition',
         quantity: 1,
-        unitPrice: defaultProd.salesPrice,
-        taxRate: 0.10
+        unitPrice: (Number(defaultProd.salesPrice) || 0) + (Number(defaultProd.variants?.[0]?.priceOffset) || 0),
+        taxRate: Number(defaultProd.taxRate) || 0
       }
     ]);
   };
@@ -203,16 +207,22 @@ export default function SubscriptionsPage() {
     const updated = [...formItems];
     if (field === 'productId') {
       const prod = products.find((p) => p.id === value);
+      if (!prod) return;
       updated[index].productId = value;
+      updated[index].templateLineId = null;
       updated[index].name = prod.name;
-      updated[index].unitPrice = prod.salesPrice;
+      updated[index].variantId = prod.variants?.[0]?.variantId ?? null;
       updated[index].variant = prod.variants?.[0]?.name || 'Standard';
+      updated[index].unitPrice = (Number(prod.salesPrice) || 0) + (Number(prod.variants?.[0]?.priceOffset) || 0);
+      updated[index].taxRate = Number(prod.taxRate) || 0;
     } else if (field === 'variant') {
       const prod = products.find((p) => p.id === updated[index].productId);
       const variantObj = prod?.variants?.find((v) => v.name === value);
       const basePrice = prod?.salesPrice || 0;
       const offset = variantObj?.priceOffset || 0;
+      updated[index].variantId = variantObj?.variantId ?? null;
       updated[index].variant = value;
+      updated[index].templateLineId = null;
       updated[index].unitPrice = basePrice + offset;
     } else if (field === 'quantity') {
       updated[index].quantity = value === '' ? '' : Math.max(0, parseInt(value, 10) || 0);
@@ -236,14 +246,20 @@ export default function SubscriptionsPage() {
     code: formDiscountCode,
     items: formItems,
     subtotal: formSubtotal,
-    date: new Date().toISOString().split('T')[0]
+    date: new Date().toISOString().split('T')[0],
+    rules: discounts
   });
 
   const calculateFormFinancials = () => {
     const subtotal = formSubtotal;
     const discountDeduction = discountValidation.valid ? discountValidation.deduction : 0;
     const discountedSubtotal = Math.max(0, subtotal - discountDeduction);
-    const taxes = discountedSubtotal * 0.10;
+    const discountRatio = subtotal > 0 ? discountDeduction / subtotal : 0;
+    const taxes = formItems.reduce((sum, item) => {
+      const itemSubtotal = (parseInt(item.quantity, 10) || 0) * (parseFloat(item.unitPrice) || 0);
+      const taxRate = Number(item.taxRate) || 0;
+      return sum + itemSubtotal * (1 - discountRatio) * taxRate;
+    }, 0);
     const grandTotal = Math.max(0, discountedSubtotal + taxes);
     return {
       subtotal,
@@ -266,7 +282,7 @@ export default function SubscriptionsPage() {
     updateItemRow(0, 'quantity', needed);
   };
 
-  const handleCreateSubmit = (e, initialStatus = 'Draft') => {
+  const handleCreateSubmit = async (e, initialStatus = 'Draft') => {
     const formElement = e.currentTarget?.tagName === 'FORM'
       ? e.currentTarget
       : e.currentTarget?.form;
@@ -276,8 +292,8 @@ export default function SubscriptionsPage() {
     const selectedPlanObj = allActivePlans.find((p) => p.id === formPlanId);
     const validityDays = Number.parseInt(formValidityDays, 10);
     const today = getTodayDateString();
-    if (!formCustomer.trim() || !formEmail.trim()) {
-      setFormError('Enter the customer or company name and a valid customer email address.');
+    if (!formCustomerId || !formCustomer.trim() || !formEmail.trim()) {
+      setFormError('Select a customer account from Brightloop before saving this quotation.');
       return;
     }
     if (!selectedPlanObj) {
@@ -292,15 +308,21 @@ export default function SubscriptionsPage() {
       setFormError('Quote validity must be at least one day.');
       return;
     }
+    if (formDiscountCode.trim() && !discountValidation.valid) {
+      setFormError(discountValidation.message || 'Choose an active discount stored in Brightloop.');
+      return;
+    }
     if (!formStartDate || !formExpiryDate || formExpiryDate < formStartDate) {
       setFormError('The subscription expiry date must be the same as or later than its start date.');
       return;
     }
     const quoteValidUntil = addDaysToDateString(today, validityDays);
     const financials = calculateFormFinancials();
-    const created = createSubscription({
+    const created = await createSubscription({
+      customerId: formCustomerId,
       customerName: formCustomer.trim(),
       customerEmail: formEmail.trim(),
+      templateId: formTemplateId || null,
       planId: selectedPlanObj.id,
       planName: selectedPlanObj.name,
       billingFrequency: selectedPlanObj.billingInterval || selectedPlanObj.frequency || 'monthly',
@@ -312,6 +334,7 @@ export default function SubscriptionsPage() {
       paymentTerms: formPaymentTerms,
       status: initialStatus,
       discountCode: formDiscountCode.trim() ? formDiscountCode.trim().toUpperCase() : '',
+      discountAmount: financials.discountDeduction,
       items: formItems.map((item) => ({
         ...item,
         quantity: Number(item.quantity) || 1,
@@ -329,9 +352,9 @@ export default function SubscriptionsPage() {
     setSelectedSub(created);
   };
 
-  const transitionSubscription = (newStatus) => {
+  const transitionSubscription = async (newStatus) => {
     if (!selectedSub) return;
-    const updatedSubscription = updateSubscriptionStatus(selectedSub.id, newStatus);
+    const updatedSubscription = await updateSubscriptionStatus(selectedSub.id, newStatus);
     if (updatedSubscription) setSelectedSub(updatedSubscription);
   };
   const getStatusBadge = (status) => {
@@ -400,9 +423,30 @@ export default function SubscriptionsPage() {
               <ChevronRight size={16} style={{ color: 'var(--primary)' }} />
             </div>
           ))}
+          {!subscriptionOptionsLoading && quotationTemplates.length === 0 && (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.84rem' }}>
+              No quotation templates are stored in Brightloop yet.
+            </div>
+          )}
         </div>
       </div>
 
+      {(subscriptionsLoading || subscriptionsError || subscriptionOptionsLoading || subscriptionOptionsError) && (
+        <div
+          role={subscriptionsError || subscriptionOptionsError ? 'alert' : 'status'}
+          style={{
+            padding: '12px 16px',
+            borderRadius: '10px',
+            background: subscriptionsError || subscriptionOptionsError ? '#fee2e2' : 'var(--bg-color)',
+            color: subscriptionsError || subscriptionOptionsError ? '#991b1b' : 'var(--text-muted)',
+            fontSize: '0.85rem'
+          }}
+        >
+          {subscriptionsError || subscriptionOptionsError || (subscriptionsLoading
+            ? 'Loading subscriptions from Brightloop…'
+            : 'Loading customers, plans, products, and templates from Brightloop…')}
+        </div>
+      )}
       {/* Main Table Card */}
       <div className="neu-flat" style={{ padding: '28px 30px' }}>
         
@@ -465,7 +509,7 @@ export default function SubscriptionsPage() {
                     <div>Contract: {sub.startDate || '—'} to {sub.expiryDate || '—'}</div>
                   </td>
                   <td style={{ fontWeight: 800, fontSize: '0.96rem' }}>
-                    ${sub.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    {formatINR(sub.totalAmount)}
                   </td>
                   <td>
                     {getStatusBadge(sub.status)}
@@ -650,9 +694,9 @@ export default function SubscriptionsPage() {
                           )}
                         </td>
                         <td>{item.quantity}</td>
-                        <td>${item.unitPrice.toFixed(2)}</td>
+                        <td>{formatINR(item.unitPrice)}</td>
                         <td>{((item.taxRate || 0.10) * 100).toFixed(0)}%</td>
-                        <td style={{ fontWeight: 800 }}>${(item.quantity * item.unitPrice).toFixed(2)}</td>
+                        <td style={{ fontWeight: 800 }}>{formatINR(item.lineTotal ?? (item.quantity * item.unitPrice))}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -675,15 +719,15 @@ export default function SubscriptionsPage() {
                         <span>Negotiated Discount:</span>
                         <span>{selectedSub.discountCode}</span>
                       </div>
-                      <div style={{ fontSize: '0.74rem' }}>
-                        {rule ? `${rule.name} (${rule.type === 'percentage' ? `${rule.value}% off` : `$${rule.value} off`}) • Scope: ${rule.scope.replace('_', ' ')}` : 'Active on next recurring invoice'}
+                      <div style={{ fontSize: '0.74rem', color: '#166534' }}>
+                        {rule ? `${rule.name} (${rule.type === 'percentage' ? `${rule.value}% off` : `${formatINR(rule.value)} off`}) • Scope: ${rule.scope.replace('_', ' ')}` : 'Active on next recurring invoice'}
                       </div>
                     </div>
                   );
                 })()}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', fontWeight: 800, marginTop: '4px' }}>
                   <span>Total / Cycle:</span>
-                  <span>${selectedSub.totalAmount.toFixed(2)}</span>
+                  <span>{formatINR(selectedSub.totalAmount)}</span>
                 </div>
               </div>
             </div>
@@ -715,14 +759,22 @@ export default function SubscriptionsPage() {
                   <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
                     Customer / Company Name
                   </label>
-                  <input
-                    type="text"
+                  <select
                     required
-                    placeholder="e.g. Acme Tech Solutions"
-                    value={formCustomer}
-                    onChange={(e) => setFormCustomer(e.target.value)}
+                    value={formCustomerId}
+                    onChange={(e) => {
+                      const customer = subscriptionOptions.customers.find((candidate) => candidate.id === e.target.value);
+                      setFormCustomerId(customer?.id || '');
+                      setFormCustomer(customer?.name || '');
+                      setFormEmail(customer?.email || '');
+                    }}
                     className="neu-inset neu-input"
-                  />
+                  >
+                    <option value="">Select a customer from Brightloop</option>
+                    {subscriptionOptions.customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>{customer.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
@@ -731,9 +783,9 @@ export default function SubscriptionsPage() {
                   <input
                     type="email"
                     required
-                    placeholder="billing@acme.com"
+                    readOnly
+                    placeholder="Select a customer above"
                     value={formEmail}
-                    onChange={(e) => setFormEmail(e.target.value)}
                     className="neu-inset neu-input"
                   />
                 </div>
@@ -756,7 +808,7 @@ export default function SubscriptionsPage() {
                     >
                       {allActivePlans.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.productName} — {p.name} (₹{p.price}/{p.billingInterval})
+                          {p.name} ({formatINR(p.price)}/{p.billingInterval})
                         </option>
                       ))}
                     </select>
@@ -799,7 +851,7 @@ export default function SubscriptionsPage() {
                       <option value="">-- Quick-Select Active Discount Rule --</option>
                       {discounts.filter((d) => d.isActive).map((d) => (
                         <option key={d.id} value={d.code}>
-                          {d.code}: {d.name} ({d.type === 'percentage' ? `${d.value}% off` : `$${d.value} off`} • min {d.minQuantity} seat{d.minQuantity > 1 ? 's' : ''})
+                          {d.code}: {d.name} ({d.type === 'percentage' ? `${d.value}% off` : `${formatINR(d.value)} off`} • min {d.minQuantity} seat{d.minQuantity > 1 ? 's' : ''})
                         </option>
                       ))}
                     </select>
@@ -831,7 +883,7 @@ export default function SubscriptionsPage() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#15803d', fontSize: '0.82rem' }}>
                             <CheckCircle2 size={16} />
                             <div>
-                              <strong>{discountValidation.rule.name}:</strong> applied! -${discountValidation.deduction.toFixed(2)} savings.
+                              <strong>{discountValidation.rule.name}:</strong> applied! -{formatINR(discountValidation.deduction)} savings.
                               <span style={{ fontSize: '0.74rem', color: '#166534', marginLeft: '6px' }}>
                                 (Scope: {discountValidation.rule.scope === 'specific_product' ? 'Specific Product' : 'Whole Subscription'})
                               </span>
@@ -885,7 +937,7 @@ export default function SubscriptionsPage() {
                     </div>
                   ) : (
                     <div style={{ marginTop: '6px', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      💡 <em>Customer asks for a better price? Pick <strong>SEATBOOST10</strong> (3+ seats) or <strong>ENTERPRISE20</strong> (5+ seats) for instant volume savings.</em>
+                      💡 <em>Coupon rules are loaded from Brightloop. Select an available rule above to apply it.</em>
                     </div>
                   )}
                 </div>
@@ -964,7 +1016,7 @@ export default function SubscriptionsPage() {
                         >
                           {currentProd?.variants?.map((v, vi) => (
                             <option key={vi} value={v.name}>
-                              {v.name} {v.priceOffset > 0 ? `(+$${v.priceOffset})` : ''}
+                              {v.name} {v.priceOffset > 0 ? `(+${formatINR(v.priceOffset)})` : ''}
                             </option>
                           ))}
                         </select>
@@ -985,7 +1037,7 @@ export default function SubscriptionsPage() {
                         />
 
                         <div style={{ fontSize: '0.86rem', fontWeight: 700, paddingLeft: '8px' }}>
-                          ${(((parseInt(item.quantity, 10) || 0) * (parseFloat(item.unitPrice) || 0))).toFixed(2)}
+                          {formatINR(((parseInt(item.quantity, 10) || 0) * (parseFloat(item.unitPrice) || 0)))}
                         </div>
 
                         {formItems.length > 1 && (
@@ -1009,26 +1061,26 @@ export default function SubscriptionsPage() {
                 <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem', color: 'var(--text-muted)' }}>
                     <span>Line Items Subtotal:</span>
-                    <span>${calculateFormFinancials().subtotal.toFixed(2)}</span>
+                    <span>{formatINR(calculateFormFinancials().subtotal)}</span>
                   </div>
 
                   {calculateFormFinancials().discountDeduction > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem', color: '#16a34a', fontWeight: 700 }}>
                       <span>Volume Discount ({formDiscountCode}):</span>
-                      <span>-${calculateFormFinancials().discountDeduction.toFixed(2)}</span>
+                      <span>-{formatINR(calculateFormFinancials().discountDeduction)}</span>
                     </div>
                   )}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem', color: 'var(--text-muted)' }}>
-                    <span>Automated Taxes (10% VAT):</span>
-                    <span>+${calculateFormFinancials().taxes.toFixed(2)}</span>
+                    <span>Taxes (Brightloop product tax rates):</span>
+                    <span>+{formatINR(calculateFormFinancials().taxes)}</span>
                   </div>
 
                   <div style={{ height: '1px', background: 'rgba(184, 194, 204, 0.4)', margin: '4px 0' }} />
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', fontWeight: 800, color: 'var(--primary)' }}>
-                    <span>Estimated Cycle Total (incl. 10% VAT):</span>
-                    <span>${calculateFormFinancials().grandTotal.toFixed(2)}</span>
+                    <span>Estimated Cycle Total (including tax):</span>
+                    <span>{formatINR(calculateFormFinancials().grandTotal)}</span>
                   </div>
                 </div>
               </div>
