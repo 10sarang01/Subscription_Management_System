@@ -207,30 +207,69 @@ async function initDatabase() {
     await db.exec('ALTER TABLE payments ADD COLUMN transaction_ref TEXT');
   }
 
-  // Ensure Admin exists
-  const adminCheck = await db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
-  if (!adminCheck) {
-    const saltRounds = 10;
-    const adminPassword = 'Admin@BrightLoop2026!';
-    const adminHash = bcrypt.hashSync(adminPassword, saltRounds);
+  // Ensure Default Users (Admin, Staff, Customer/User) exist in SQLite database
+  const defaultAccounts = [
+    {
+      email: 'admin@brightloop.com',
+      password: 'Admin@BrightLoop2026!',
+      fullName: 'Elena Vance (Admin)',
+      role: 'admin',
+      company: 'Brightloop Software Inc.',
+      phone: '+1-555-0100'
+    },
+    {
+      email: 'staff@brightloop.com',
+      password: 'Staff@BrightLoop2026!',
+      fullName: 'Sarah Jenkins (Staff)',
+      role: 'staff',
+      company: 'Brightloop Operations Team',
+      phone: '+1-555-0101'
+    },
+    {
+      email: 'sarah.ops@brightloop.com',
+      password: 'Staff@BrightLoop2026!',
+      fullName: 'Sarah Jenkins (Operations)',
+      role: 'staff',
+      company: 'Brightloop Operations Team',
+      phone: '+1-555-0102'
+    },
+    {
+      email: 'user@brightloop.com',
+      password: 'User@BrightLoop2026!',
+      fullName: 'Alex Morgan (Customer)',
+      role: 'customer',
+      company: 'Corner Bakery & Cafe',
+      phone: '+1-555-0198'
+    },
+    {
+      email: 'alice@cornerbakery.com',
+      password: 'Customer@BrightLoop2026!',
+      fullName: 'Alice Smith (Customer)',
+      role: 'customer',
+      company: 'Corner Bakery & Cafe',
+      phone: '+1-555-0199'
+    }
+  ];
 
-    const insertUser = await db.prepare(`
-      INSERT INTO users (id, email, password_hash, full_name, role, company_name, phone)
-      VALUES (1, ?, ?, ?, ?, ?, ?)
-    `);
-
-    await insertUser.run(
-      'admin@brightloop.com',
-      adminHash,
-      'Elena Vance (Admin)',
-      'admin',
-      'Brightloop Software Inc.',
-      '+1-555-0100'
-    );
-
-    console.log('✅ SQLite users table initialized with Admin account.');
-  } else {
-    console.log('ℹ️ SQLite database already contains admin user.');
+  const saltRounds = 10;
+  for (const acc of defaultAccounts) {
+    const existing = await db.prepare("SELECT id FROM users WHERE email = ? COLLATE NOCASE").get(acc.email);
+    if (!existing) {
+      const hash = bcrypt.hashSync(acc.password, saltRounds);
+      const insertUser = await db.prepare(`
+        INSERT INTO users (email, password_hash, full_name, role, company_name, phone)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      await insertUser.run(
+        acc.email.toLowerCase(),
+        hash,
+        acc.fullName,
+        acc.role,
+        acc.company,
+        acc.phone
+      );
+      console.log(`✅ SQLite users table initialized with default ${acc.role} account: ${acc.email}`);
+    }
   }
 
   // Ensure Default Hardcoded Discounts exist in SQLite database
@@ -358,7 +397,6 @@ async function createUser({ email, password, full_name, role = 'customer', compa
 // ─── Product query functions ───────────────────────────────────────────────
 
 async function getAllProducts() {
-<<<<<<< HEAD
   const rows = db.prepare('SELECT * FROM products ORDER BY created_at DESC').all();
   const allVariants = db.prepare('SELECT id, product_id, attribute_name, attribute_value, extra_price FROM product_variants ORDER BY id ASC').all();
   
@@ -375,9 +413,6 @@ async function getAllProducts() {
     });
   }
 
-=======
-  const rows = await db.prepare('SELECT * FROM products ORDER BY created_at DESC').all();
->>>>>>> d743db1a2968fe6422784227d2e0ec9eb7bdc77d
   return rows.map(r => ({
     id: r.id,
     name: r.name,
@@ -414,15 +449,9 @@ async function createProduct({ id, name, type, salesPrice, costPrice, notes, has
     priceOffset: Math.max(0, parseFloat(v.priceOffset) || 0)
   }));
 
-<<<<<<< HEAD
   const stmt = db.prepare(`
     INSERT INTO products (id, name, type, product_type, sales_price, cost_price, notes, has_odoo_variant, odoo_price_offset)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-=======
-  const stmt = await db.prepare(`
-    INSERT INTO products (id, name, type, product_type, sales_price, cost_price, notes, has_odoo_variant, odoo_price_offset, variants_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
->>>>>>> d743db1a2968fe6422784227d2e0ec9eb7bdc77d
   `);
   await stmt.run(
     prodId,
@@ -530,16 +559,7 @@ async function updateProduct(id, { name, type, salesPrice, costPrice, notes, has
     }
   }
 
-<<<<<<< HEAD
   const r = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
-=======
-  if (allowedCols.length === 0) return null;
-  values.push(id);
-
-  await db.prepare(`UPDATE products SET ${allowedCols.join(', ')} WHERE id = ?`).run(...values);
-
-  const r = await db.prepare('SELECT * FROM products WHERE id = ?').get(id);
->>>>>>> d743db1a2968fe6422784227d2e0ec9eb7bdc77d
   if (!r) return null;
 
   const productVariants = db.prepare('SELECT id, attribute_name, attribute_value, extra_price FROM product_variants WHERE product_id = ? ORDER BY id ASC').all(id);
@@ -675,16 +695,12 @@ async function createProductPlan({
 }) {
   const planId = id || `pp-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   const validPrice = Math.max(0, parseFloat(price) || 0);
-<<<<<<< HEAD
   const today = new Date().toISOString().slice(0, 10);
   const nextYear = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
   const validFrom = availableFrom || today;
   const validUntil = availableUntil || nextYear;
 
   const stmt = db.prepare(`
-=======
-  const stmt = await db.prepare(`
->>>>>>> d743db1a2968fe6422784227d2e0ec9eb7bdc77d
     INSERT INTO product_plans
       (id, product_id, name, price, billing_interval, minimum_quantity,
        available_from, available_until, auto_close, allow_early_close,
@@ -892,7 +908,6 @@ async function deleteDiscount(id) {
 }
 
 async function getVariantsByProductId(productId) {
-<<<<<<< HEAD
   const rows = db.prepare('SELECT id, product_id, attribute_name, attribute_value, extra_price, sku, is_active FROM product_variants WHERE product_id = ? ORDER BY id ASC').all(productId);
   return rows.map(v => ({
     id: v.id,
@@ -1151,10 +1166,6 @@ async function updateTemplateDB(id, updates) {
 
 async function deleteTemplateDB(id) {
   return db.prepare('DELETE FROM app_quotation_templates WHERE id = ?').run(id);
-=======
-  const product = await db.prepare('SELECT variants_json FROM products WHERE id = ?').get(productId);
-  return product && product.variants_json ? JSON.parse(product.variants_json) : [];
->>>>>>> d743db1a2968fe6422784227d2e0ec9eb7bdc77d
 }
 
 module.exports = {
