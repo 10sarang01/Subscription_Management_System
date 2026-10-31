@@ -1,8 +1,14 @@
 const path = require('path');
-const Database = require('better-sqlite3');
-const db = new Database(path.join('d:/React/Subscription_Management_System', 'brightloop.db'));
-const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(t => t.name);
-tables.forEach(t => {
-  const cols = db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
-  console.log(t + ': ' + cols.join(', '));
-});
+const sqlite3 = require('sqlite3');
+const SQLite = require('./server/sqlite');
+const db = new SQLite(path.join(__dirname, 'brightloop.db'), sqlite3.OPEN_READONLY);
+(async () => {
+  try {
+    const tables = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+    for (const { name } of tables) {
+      const columns = await db.prepare(`PRAGMA table_info("${name.replace(/"/g, '""')}")`).all();
+      console.log(`${name}: ${columns.map((column) => column.name).join(', ')}`);
+    }
+  } catch (err) { console.error(err.message); process.exitCode = 1; }
+  finally { await db.close(); }
+})();

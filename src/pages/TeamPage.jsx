@@ -3,7 +3,6 @@ import {
   Users,
   UserPlus,
   Shield,
-  Database,
   RefreshCw,
   AlertCircle,
   CheckCircle2,
@@ -150,7 +149,7 @@ export default function TeamPage() {
 
       if (res.ok) {
         const data = await res.json();
-        setStaffSuccess(`Staff member ${data.user.full_name} added to SQLite database!`);
+        setStaffSuccess(`Staff member ${data.user.full_name} added!`);
         fetchUsers();
       } else {
         throw new Error('API server unavailable; added to local registry.');
@@ -196,7 +195,7 @@ export default function TeamPage() {
       <div className="neu-flat" style={{ padding: '24px 30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <span style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Scene 1: User Details & SQLite Database
+            Team management
           </span>
           <h2 style={{ fontSize: '1.45rem', fontWeight: 800, marginTop: '4px', color: 'var(--text-main)' }}>
             User Directory & Access Policies
@@ -328,10 +327,7 @@ export default function TeamPage() {
 
       {/* Database Connection Status Banner */}
       <div className="neu-inset" style={{ padding: '16px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', fontSize: '0.88rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Database size={18} style={{ color: 'var(--primary)' }} />
-          <span>Local SQLite Database: <strong>brightloop.db</strong> (Table: <code>users</code>)</span>
-        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Shield size={16} style={{ color: '#16a34a' }} />
           <span>Password Policy: <strong>&gt;8 chars • 1 Uppercase • 1 Lowercase • 1 Special</strong></span>
@@ -344,7 +340,7 @@ export default function TeamPage() {
           <div>
             <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>Registered User Accounts ({usersList.length})</h3>
             <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Persisted in SQLite database schema with case-insensitive unique email and hashed passwords.
+              Manage staff and customer accounts.
             </p>
           </div>
         </div>

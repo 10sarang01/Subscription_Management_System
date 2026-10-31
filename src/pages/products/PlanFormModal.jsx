@@ -9,7 +9,7 @@ import { EMPTY_PLAN_FORM, BILLING_LABELS } from './productConstants';
 export default function PlanFormModal({ product, editingPlan, onSubmit, onClose }) {
   const [form, setForm] = useState(editingPlan || {
     ...EMPTY_PLAN_FORM,
-    price: product.salesPrice || ''
+    price: product.salesPrice ?? ''
   });
   const [errors, setErrors] = useState({});
 
@@ -98,7 +98,7 @@ export default function PlanFormModal({ product, editingPlan, onSubmit, onClose 
                   type="number"
                   step="0.01"
                   min="0"
-                  placeholder="2000.00"
+                  placeholder="Enter plan price"
                   value={form.price}
                   onChange={e => {
                     const val = e.target.value;

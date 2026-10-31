@@ -68,7 +68,7 @@ export default function Dashboard({ user, token, onLogout }) {
         throw new Error(data.error || 'Failed to add staff member');
       }
 
-      setStaffSuccess(`Staff member ${data.user.full_name} added to SQLite database!`);
+      setStaffSuccess(`Staff member ${data.user.full_name} added!`);
       setStaffForm({ fullName: '', email: '', phone: '', password: '' });
       fetchUsers();
       setTimeout(() => setShowAddStaff(false), 2000);
@@ -124,10 +124,7 @@ export default function Dashboard({ user, token, onLogout }) {
 
       {/* Role Notice & Database Badge */}
       <div className="neu-inset" style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', fontSize: '0.88rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Database size={18} style={{ color: 'var(--primary)' }} />
-          <span>Connected to local SQLite database: <strong>brightloop.db</strong></span>
-        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <Shield size={16} style={{ color: 'var(--primary)' }} />
           <span>Role Policy: {isAdmin ? 'Full System Control (Admin)' : isStaff ? 'Internal Staff (Day-to-day work)' : 'Customer Self-Service Portal'}</span>
@@ -239,10 +236,10 @@ export default function Dashboard({ user, token, onLogout }) {
             <div>
               <h3 style={{ fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Users size={20} style={{ color: 'var(--primary)' }} />
-                SQLite Users Directory ({usersList.length} Accounts)
+                Users Directory ({usersList.length} Accounts)
               </h3>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Real-time records queried directly from local SQLite database (<code>brightloop.db</code>)
+                Manage team and customer accounts.
               </p>
             </div>
             <button

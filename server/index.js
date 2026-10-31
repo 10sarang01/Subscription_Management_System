@@ -34,24 +34,7 @@ const {
   toggleDiscountStatus,
   incrementDiscountUsage,
   deleteDiscount,
-  getVariantsByProductId,
-  // Subscriptions
-  getAllSubscriptions,
-  createSubscriptionDB,
-  updateSubscriptionDB,
-  deleteSubscriptionDB,
-  // Invoices
-  getAllInvoices,
-  createInvoiceDB,
-  updateInvoiceDB,
-  // Payments
-  getAllPayments,
-  createPaymentDB,
-  // Quotation Templates
-  getAllTemplates,
-  createTemplateDB,
-  updateTemplateDB,
-  deleteTemplateDB
+  getVariantsByProductId
 } = require('./db');
 
 const app = express();
@@ -294,10 +277,20 @@ app.post('/api/users/staff', authenticateToken, requireAdmin, async (req, res) =
   }
 });
 
+function validProductFields(body, partial = false) {
+  if ((!partial || body.name !== undefined) && (typeof body.name !== 'string' || !body.name.trim())) return false;
+  if ((!partial || body.type !== undefined) && !['Software', 'Add-on', 'Service'].includes(body.type)) return false;
+  for (const key of ['salesPrice', 'costPrice']) {
+    if ((!partial || body[key] !== undefined) && (body[key] === '' || !Number.isFinite(Number(body[key])) || Number(body[key]) < 0)) return false;
+  }
+  if (body.variants !== undefined && (!Array.isArray(body.variants) || body.variants.some((variant) => !variant || typeof variant.name !== 'string' || !variant.name.trim() || variant.priceOffset === '' || !Number.isFinite(Number(variant.priceOffset)) || Number(variant.priceOffset) < 0))) return false;
+  return true;
+}
+
 // ─── Products API ─────────────────────────────────────────────────────────
 
 // Get all products
-app.get('/api/products', async (req, res) => {
+app.get('/api/products', authenticateToken, async (req, res) => {
   try {
     const products = await getAllProducts();
     res.json({ products });
@@ -308,23 +301,9 @@ app.get('/api/products', async (req, res) => {
 });
 
 // Create new product
-app.post('/api/products', async (req, res) => {
+app.post('/api/products', authenticateToken, requireAdmin, async (req, res) => {
   const { name, type, salesPrice, costPrice, notes, hasOdooVariant, odooPriceOffset, variants } = req.body;
-  if (!name || salesPrice === undefined || costPrice === undefined) {
-    return res.status(400).json({ error: 'Product name, sales price, and cost price are required.' });
-  }
-
-  if (parseFloat(salesPrice) < 0 || parseFloat(costPrice) < 0) {
-    return res.status(400).json({ error: 'Product sales price and cost price cannot be negative.' });
-  }
-
-  if (variants && Array.isArray(variants)) {
-    for (const v of variants) {
-      if (v.priceOffset !== undefined && parseFloat(v.priceOffset) < 0) {
-        return res.status(400).json({ error: 'Variant price offset cannot be negative.' });
-      }
-    }
-  }
+  if (!validProductFields(req.body)) return res.status(400).json({ error: 'Enter a valid name, type, prices, and variant details.' });
 
   try {
     const product = await createProduct({
@@ -334,7 +313,7 @@ app.post('/api/products', async (req, res) => {
       costPrice: Math.max(0, parseFloat(costPrice) || 0),
       notes,
       hasOdooVariant,
-      odooPriceOffset: odooPriceOffset || 560,
+      odooPriceOffset: odooPriceOffset ?? 0,
       variants: variants || []
     });
     res.status(201).json({ message: 'Product created successfully.', product });
@@ -345,22 +324,10 @@ app.post('/api/products', async (req, res) => {
 });
 
 // Update product (details & variants)
-app.put('/api/products/:id', async (req, res) => {
+app.put('/api/products/:id', authenticateToken, requireAdmin, async (req, res) => {
   const { name, type, salesPrice, costPrice, notes, hasOdooVariant, odooPriceOffset, variants } = req.body;
 
-  if (salesPrice !== undefined && parseFloat(salesPrice) < 0) {
-    return res.status(400).json({ error: 'Product sales price cannot be negative.' });
-  }
-  if (costPrice !== undefined && parseFloat(costPrice) < 0) {
-    return res.status(400).json({ error: 'Product cost price cannot be negative.' });
-  }
-  if (variants && Array.isArray(variants)) {
-    for (const v of variants) {
-      if (v.priceOffset !== undefined && parseFloat(v.priceOffset) < 0) {
-        return res.status(400).json({ error: 'Variant price offset cannot be negative.' });
-      }
-    }
-  }
+  if (!validProductFields(req.body, true)) return res.status(400).json({ error: 'Enter valid product and variant details.' });
 
   try {
     const updated = await updateProduct(req.params.id, {
@@ -386,9 +353,10 @@ app.put('/api/products/:id', async (req, res) => {
 });
 
 // Delete product
-app.delete('/api/products/:id', async (req, res) => {
+app.delete('/api/products/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    await deleteProduct(req.params.id);
+    const result = await deleteProduct(req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Product not found.' });
     res.json({ message: 'Product deleted.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete product.' });
@@ -396,7 +364,7 @@ app.delete('/api/products/:id', async (req, res) => {
 });
 
 // GET /api/products/:productId/variants — list variants for a product
-app.get('/api/products/:productId/variants', async (req, res) => {
+app.get('/api/products/:productId/variants', authenticateToken, async (req, res) => {
   try {
     const variants = await getVariantsByProductId(req.params.productId);
     res.json({ variants });
@@ -409,7 +377,7 @@ app.get('/api/products/:productId/variants', async (req, res) => {
 // ─── Product-scoped Plans API ─────────────────────────────────────────────
 
 // GET /api/products/:productId/plans — list all plans for a product
-app.get('/api/products/:productId/plans', async (req, res) => {
+app.get('/api/products/:productId/plans', authenticateToken, async (req, res) => {
   try {
     const plans = await getPlansByProductId(req.params.productId);
     res.json({ plans });
@@ -420,7 +388,7 @@ app.get('/api/products/:productId/plans', async (req, res) => {
 });
 
 // POST /api/products/:productId/plans — create a plan for a product
-app.post('/api/products/:productId/plans', async (req, res) => {
+app.post('/api/products/:productId/plans', authenticateToken, requireAdmin, async (req, res) => {
   const { productId } = req.params;
   const {
     name, price, billingInterval, minimumQuantity,
@@ -429,9 +397,9 @@ app.post('/api/products/:productId/plans', async (req, res) => {
     description
   } = req.body;
 
-  if (!name || price === undefined || !billingInterval) {
+  if (!name || price === undefined || !billingInterval || !availableFrom || !availableUntil) {
     return res.status(400).json({
-      error: 'Plan name, price, and billing interval are required.'
+      error: 'Plan name, price, billing interval, and availability dates are required.'
     });
   }
 
@@ -440,8 +408,8 @@ app.post('/api/products/:productId/plans', async (req, res) => {
     return res.status(400).json({ error: 'Billing interval must be daily, weekly, monthly, or yearly.' });
   }
 
-  if (parseFloat(price) < 0) {
-    return res.status(400).json({ error: 'Plan price cannot be negative.' });
+  if (price === '' || !Number.isFinite(Number(price)) || Number(price) < 0) {
+    return res.status(400).json({ error: 'Plan price must be a non-negative number.' });
   }
 
   try {
@@ -488,7 +456,7 @@ app.post('/api/products/:productId/plans', async (req, res) => {
 });
 
 // PUT /api/plans/:planId — update a product plan
-app.put('/api/plans/:planId', async (req, res) => {
+app.put('/api/plans/:planId', authenticateToken, requireAdmin, async (req, res) => {
   const { planId } = req.params;
   const {
     name, price, billingInterval, minimumQuantity,
@@ -497,8 +465,8 @@ app.put('/api/plans/:planId', async (req, res) => {
     description
   } = req.body;
 
-  if (price !== undefined && parseFloat(price) < 0) {
-    return res.status(400).json({ error: 'Plan price cannot be negative.' });
+  if (price !== undefined && (price === '' || !Number.isFinite(Number(price)) || Number(price) < 0)) {
+    return res.status(400).json({ error: 'Plan price must be a non-negative number.' });
   }
 
   try {
@@ -528,7 +496,7 @@ app.put('/api/plans/:planId', async (req, res) => {
 });
 
 // PATCH /api/plans/:planId/status — activate or deactivate a plan
-app.patch('/api/plans/:planId/status', async (req, res) => {
+app.patch('/api/plans/:planId/status', authenticateToken, requireAdmin, async (req, res) => {
   const { planId } = req.params;
   const { isActive } = req.body;
 
@@ -549,9 +517,10 @@ app.patch('/api/plans/:planId/status', async (req, res) => {
 });
 
 // DELETE /api/plans/:planId — delete a product plan
-app.delete('/api/plans/:planId', async (req, res) => {
+app.delete('/api/plans/:planId', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    await deleteProductPlan(req.params.planId);
+    const result = await deleteProductPlan(req.params.planId);
+    if (!result.changes) return res.status(404).json({ error: 'Plan not found.' });
     res.json({ message: 'Plan deleted.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete plan.' });
@@ -611,7 +580,7 @@ app.get('/api/plans', async (req, res) => {
 // ─── Discounts API (Scene 5 Live Persistence) ─────────────────────────────
 
 // GET /api/discounts — fetch all discounts from SQLite database
-app.get('/api/discounts', async (req, res) => {
+app.get('/api/discounts', authenticateToken, async (req, res) => {
   try {
     const discounts = await getAllDiscounts();
     res.json({ discounts });
@@ -622,17 +591,23 @@ app.get('/api/discounts', async (req, res) => {
 });
 
 // POST /api/discounts — create and persist new discount rule
-app.post('/api/discounts', async (req, res) => {
+app.post('/api/discounts', authenticateToken, requireAdmin, async (req, res) => {
   const { code, name, type, value, scope, targetProductId, minQuantity, minAmount, startDate, endDate, usageLimit } = req.body;
 
   if (!code || !name) {
     return res.status(400).json({ error: 'Discount code and rule description name are required.' });
   }
 
-  // Check uniqueness of code
-  const existing = await getDiscountByCode(code);
-  if (existing) {
-    return res.status(400).json({ error: `Discount code "${code.toUpperCase()}" already exists in the database.` });
+  const numericValue = Number(value);
+  const quantity = Number(minQuantity ?? 0);
+  const minimum = Number(minAmount ?? 0);
+  const maximumUses = usageLimit === null || usageLimit === '' || usageLimit === undefined ? null : Number(usageLimit);
+  if (!['percentage', 'fixed'].includes(type) || !Number.isFinite(numericValue) || numericValue <= 0 || (type === 'percentage' && numericValue > 100) ||
+      !['specific_product', 'whole_subscription'].includes(scope) || (scope === 'specific_product' && !targetProductId) ||
+      !Number.isInteger(quantity) || quantity < 0 || !Number.isFinite(minimum) || minimum < 0 ||
+      (maximumUses !== null && (!Number.isInteger(maximumUses) || maximumUses < 1)) ||
+      (startDate && endDate && startDate > endDate)) {
+    return res.status(400).json({ error: 'Invalid discount rule values.' });
   }
 
   try {
@@ -647,17 +622,19 @@ app.post('/api/discounts', async (req, res) => {
       minAmount,
       startDate,
       endDate,
-      usageLimit
+      usageLimit: maximumUses,
+      createdBy: req.user.id
     });
     res.status(201).json({ message: 'Discount rule created and persisted in database.', discount });
   } catch (err) {
+    if (err.code === 'SQLITE_CONSTRAINT') return res.status(400).json({ error: 'Discount code already exists or the selected product is invalid.' });
     console.error('Create discount error:', err);
     res.status(500).json({ error: 'Failed to create discount rule.' });
   }
 });
 
 // PATCH /api/discounts/:id/status — toggle active/paused status in SQLite
-app.patch('/api/discounts/:id/status', async (req, res) => {
+app.patch('/api/discounts/:id/status', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { isActive } = req.body;
     const updated = await toggleDiscountStatus(req.params.id, isActive);
@@ -672,7 +649,7 @@ app.patch('/api/discounts/:id/status', async (req, res) => {
 });
 
 // POST /api/discounts/use — record discount usage and auto-deactivate when exhausted
-app.post('/api/discounts/use', async (req, res) => {
+app.post('/api/discounts/use', authenticateToken, requireAdmin, async (req, res) => {
   const { code, count } = req.body;
   if (!code) {
     return res.status(400).json({ error: 'Discount code is required.' });
@@ -687,169 +664,13 @@ app.post('/api/discounts/use', async (req, res) => {
 });
 
 // DELETE /api/discounts/:id — delete discount from SQLite
-app.delete('/api/discounts/:id', async (req, res) => {
+app.delete('/api/discounts/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    await deleteDiscount(req.params.id);
+    const result = await deleteDiscount(req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Discount rule not found.' });
     res.json({ message: 'Discount rule removed from database.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete discount.' });
-  }
-});
-
-// ─── Subscriptions API ────────────────────────────────────────────────────
-
-app.get('/api/subscriptions', async (req, res) => {
-  try {
-    res.json({ subscriptions: await getAllSubscriptions() });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch subscriptions.' });
-  }
-});
-
-app.post('/api/subscriptions', async (req, res) => {
-  try {
-    const sub = await createSubscriptionDB(req.body);
-    res.status(201).json({ message: 'Subscription created.', subscription: sub });
-  } catch (err) {
-    console.error('Create subscription error:', err);
-    res.status(500).json({ error: 'Failed to create subscription.' });
-  }
-});
-
-app.put('/api/subscriptions/:id', async (req, res) => {
-  try {
-    const updated = await updateSubscriptionDB(req.params.id, req.body);
-    if (!updated) return res.status(404).json({ error: 'Subscription not found.' });
-    res.json({ message: 'Subscription updated.', subscription: updated });
-  } catch (err) {
-    console.error('Update subscription error:', err);
-    res.status(500).json({ error: 'Failed to update subscription.' });
-  }
-});
-
-app.delete('/api/subscriptions/:id', async (req, res) => {
-  try {
-    await deleteSubscriptionDB(req.params.id);
-    res.json({ message: 'Subscription deleted.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete subscription.' });
-  }
-});
-
-// ─── Invoices API ─────────────────────────────────────────────────────────
-
-app.get('/api/invoices', async (req, res) => {
-  try {
-    res.json({ invoices: await getAllInvoices() });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch invoices.' });
-  }
-});
-
-app.post('/api/invoices', async (req, res) => {
-  try {
-    const inv = await createInvoiceDB(req.body);
-    res.status(201).json({ message: 'Invoice created.', invoice: inv });
-  } catch (err) {
-    console.error('Create invoice error:', err);
-    res.status(500).json({ error: 'Failed to create invoice.' });
-  }
-});
-
-app.patch('/api/invoices/:id', async (req, res) => {
-  try {
-    const updated = await updateInvoiceDB(req.params.id, req.body);
-    if (!updated) return res.status(404).json({ error: 'Invoice not found.' });
-    res.json({ message: 'Invoice updated.', invoice: updated });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update invoice.' });
-  }
-});
-
-// POST /api/invoices/bulk — create multiple invoices at once (billing day run)
-app.post('/api/invoices/bulk', async (req, res) => {
-  const { invoices } = req.body;
-  if (!Array.isArray(invoices)) return res.status(400).json({ error: 'invoices array required.' });
-  try {
-    const created = [];
-    for (const inv of invoices) {
-      created.push(await createInvoiceDB(inv));
-    }
-    res.status(201).json({ message: `${created.length} invoices created.`, invoices: created });
-  } catch (err) {
-    console.error('Bulk invoice error:', err);
-    res.status(500).json({ error: 'Failed to create bulk invoices.' });
-  }
-});
-
-// ─── Payments API ─────────────────────────────────────────────────────────
-
-app.get('/api/payments', async (req, res) => {
-  try {
-    res.json({ payments: await getAllPayments() });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch payments.' });
-  }
-});
-
-app.post('/api/payments', async (req, res) => {
-  try {
-    // Also update the invoice paid amount and balance
-    const { invoiceId, amount, invoiceTotal, invoiceAmountPaid } = req.body;
-    const payment = await createPaymentDB(req.body);
-
-    if (invoiceId) {
-      const paymentAmount = parseFloat(amount) || 0;
-      const prevPaid = parseFloat(invoiceAmountPaid) || 0;
-      const total = parseFloat(invoiceTotal) || 0;
-      const newPaidTotal = prevPaid + paymentAmount;
-      const newBalance = Math.max(0, total - newPaidTotal);
-      const newStatus = newBalance <= 0.01 ? 'Paid' : 'Partially Paid';
-      await updateInvoiceDB(invoiceId, { amountPaid: newPaidTotal, balance: newBalance, status: newStatus });
-    }
-
-    res.status(201).json({ message: 'Payment recorded.', payment });
-  } catch (err) {
-    console.error('Record payment error:', err);
-    res.status(500).json({ error: 'Failed to record payment.' });
-  }
-});
-
-// ─── Quotation Templates API ──────────────────────────────────────────────
-
-app.get('/api/templates', async (req, res) => {
-  try {
-    res.json({ templates: await getAllTemplates() });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch templates.' });
-  }
-});
-
-app.post('/api/templates', async (req, res) => {
-  try {
-    const tmpl = await createTemplateDB(req.body);
-    res.status(201).json({ message: 'Template created.', template: tmpl });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to create template.' });
-  }
-});
-
-app.put('/api/templates/:id', async (req, res) => {
-  try {
-    const updated = await updateTemplateDB(req.params.id, req.body);
-    if (!updated) return res.status(404).json({ error: 'Template not found.' });
-    res.json({ message: 'Template updated.', template: updated });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update template.' });
-  }
-});
-
-app.delete('/api/templates/:id', async (req, res) => {
-  try {
-    await deleteTemplateDB(req.params.id);
-    res.json({ message: 'Template deleted.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete template.' });
   }
 });
 
