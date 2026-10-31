@@ -425,42 +425,140 @@ function ProductDetailView({ product, onBack }) {
       {/* ── Variants Tab ── */}
       {activeTab === 'variants' && (
         <div className="neu-flat" style={{ padding: '24px 28px' }}>
-          <h3 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '16px' }}>Product Variants</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 800 }}>Product Variants</h3>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                Each variant adds to the base plan price when a customer subscribes.
+              </p>
+            </div>
+            {product.variants?.length > 0 && (
+              <span style={{
+                fontSize: '0.75rem', fontWeight: 700, padding: '4px 10px',
+                borderRadius: '999px', background: 'rgba(79,70,229,0.1)', color: 'var(--primary)'
+              }}>
+                {product.variants.length} variant{product.variants.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+
           {(!product.variants || product.variants.length === 0) ? (
-            <div className="neu-inset-sm" style={{ padding: '32px', textAlign: 'center', borderRadius: '12px' }}>
-              <Tag size={28} style={{ color: 'var(--text-muted)', margin: '0 auto 10px' }} />
-              <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>No variants defined for this product.</p>
+            <div className="neu-inset-sm" style={{ padding: '48px', textAlign: 'center', borderRadius: '16px' }}>
+              <Tag size={32} style={{ color: 'var(--text-muted)', margin: '0 auto 12px', display: 'block' }} />
+              <p style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-muted)' }}>No variants defined for this product.</p>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>Variants are added during product creation.</p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+              gap: '16px'
+            }}>
               {product.variants.map((v, i) => {
                 const isOdoo = v.name.toLowerCase().includes('odoo');
+                const isStandard = v.priceOffset === 0;
+
                 return (
                   <div key={i} style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '12px 16px', borderRadius: '12px',
-                    background: isOdoo ? '#ede9fe' : 'var(--bg-color)',
-                    border: `1px solid ${isOdoo ? '#c4b5fd' : 'rgba(184,194,204,0.3)'}`,
-                    flexWrap: 'wrap', gap: '8px'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {isOdoo && <span>👑</span>}
-                      <span style={{ fontWeight: 700, fontSize: '0.9rem', color: isOdoo ? '#5b21b6' : 'var(--text-main)' }}>{v.name}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Additional price:</span>
-                      <span style={{ fontWeight: 800, color: v.priceOffset > 0 ? '#5b21b6' : 'var(--text-muted)', fontSize: '0.95rem' }}>
-                        {v.priceOffset > 0 ? `+₹${v.priceOffset}` : '₹0'}
+                    position: 'relative',
+                    padding: '24px 20px',
+                    borderRadius: '18px',
+                    background: isOdoo
+                      ? 'linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%)'
+                      : isStandard
+                        ? 'linear-gradient(135deg, var(--primary) 0%, #6366f1 100%)'
+                        : 'linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)',
+                    boxShadow: isOdoo
+                      ? '0 8px 32px rgba(91,33,182,0.35), inset 0 1px 0 rgba(255,255,255,0.15)'
+                      : isStandard
+                        ? '0 8px 32px rgba(79,70,229,0.3), inset 0 1px 0 rgba(255,255,255,0.15)'
+                        : '0 8px 32px rgba(15,118,110,0.3), inset 0 1px 0 rgba(255,255,255,0.15)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '16px',
+                    overflow: 'hidden',
+                    cursor: 'default',
+                    transition: 'transform 0.2s ease, box-shadow 0.2s ease'
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = isOdoo ? '0 14px 40px rgba(91,33,182,0.45)' : '0 14px 40px rgba(79,70,229,0.4)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = isOdoo ? '0 8px 32px rgba(91,33,182,0.35), inset 0 1px 0 rgba(255,255,255,0.15)' : '0 8px 32px rgba(79,70,229,0.3), inset 0 1px 0 rgba(255,255,255,0.15)'; }}
+                  >
+                    {/* Background decoration circle */}
+                    <div style={{
+                      position: 'absolute', top: '-20px', right: '-20px',
+                      width: '90px', height: '90px', borderRadius: '50%',
+                      background: 'rgba(255,255,255,0.07)'
+                    }} />
+                    <div style={{
+                      position: 'absolute', bottom: '-30px', left: '-10px',
+                      width: '70px', height: '70px', borderRadius: '50%',
+                      background: 'rgba(255,255,255,0.05)'
+                    }} />
+
+                    {/* Top row: icon + type badge */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{
+                        width: '38px', height: '38px', borderRadius: '12px',
+                        background: 'rgba(255,255,255,0.18)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '1.1rem'
+                      }}>
+                        {isOdoo ? '👑' : isStandard ? '⭐' : '🔷'}
+                      </div>
+                      <span style={{
+                        fontSize: '0.68rem', fontWeight: 800, padding: '3px 9px',
+                        borderRadius: '999px',
+                        background: 'rgba(255,255,255,0.18)',
+                        color: '#fff',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em'
+                      }}>
+                        {isOdoo ? 'Brand' : isStandard ? 'Base' : 'Custom'}
                       </span>
+                    </div>
+
+                    {/* Variant name */}
+                    <div>
+                      <div style={{
+                        fontSize: '1.05rem', fontWeight: 800, color: '#fff',
+                        lineHeight: 1.2, marginBottom: '4px'
+                      }}>
+                        {v.name}
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.65)' }}>
+                        {isOdoo ? 'Premium branded edition' : isStandard ? 'Default included edition' : 'Additional edition'}
+                      </div>
+                    </div>
+
+                    {/* Price badge */}
+                    <div style={{
+                      background: 'rgba(255,255,255,0.15)',
+                      borderRadius: '12px',
+                      padding: '10px 14px',
+                      backdropFilter: 'blur(8px)',
+                      border: '1px solid rgba(255,255,255,0.2)'
+                    }}>
+                      <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.7)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>
+                        Price offset
+                      </div>
+                      <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#fff' }}>
+                        {v.priceOffset > 0 ? `+₹${v.priceOffset.toLocaleString()}` : '₹0'}
+                      </div>
+                      {v.priceOffset > 0 && (
+                        <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)', marginTop: '2px' }}>
+                          added to plan price
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
           )}
-          <div className="neu-inset-sm" style={{ padding: '12px 16px', borderRadius: '12px', marginTop: '16px', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+
+          <div className="neu-inset-sm" style={{ padding: '12px 16px', borderRadius: '12px', marginTop: '20px', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Info size={14} />
-            Effective price = Plan price + Variant additional price. Variants are configured at product creation time.
+            Effective price = Plan price + Variant offset. Variants are set at product creation time.
           </div>
         </div>
       )}
