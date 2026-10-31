@@ -40,8 +40,8 @@ Step 1 of the Brightloop Software Subscription Management platform: A local SQLi
 | Role | Name | Email | Password |
 |---|---|---|---|
 | **Admin** | Elena Vance | `admin@brightloop.com` | `Admin@BrightLoop2026!` |
-| **Staff** | Sarah Jenkins | `sarah.ops@brightloop.com` | `Staff@BrightLoop2026!` |
-| **Customer** | Alice Smith | `alice@cornerbakery.com` | `Customer@BrightLoop2026!` |
+| **Staff** | Sarah Jenkins | `staff@brightloop.com` *(or `sarah.ops@brightloop.com`)* | `Staff@BrightLoop2026!` |
+| **Customer / User** | Alex Morgan | `user@brightloop.com` *(or `alice@cornerbakery.com`)* | `User@BrightLoop2026!` |
 
 *(You can also use the one-click demo buttons directly inside the login UI).*
 

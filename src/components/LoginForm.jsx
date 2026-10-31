@@ -72,20 +72,20 @@ export default function LoginForm({ onLoginSuccess, onForgotPassword }) {
             company_name: 'Brightloop Software Inc.'
           };
           authToken = 'brightloop_jwt_admin';
-        } else if (email.toLowerCase().includes('ops') || email.toLowerCase().includes('sarah')) {
+        } else if (email.toLowerCase().includes('staff') || email.toLowerCase().includes('ops') || email.toLowerCase().includes('sarah')) {
           loggedInUser = {
             id: 2,
-            full_name: 'Sarah Jenkins',
-            email: 'sarah.ops@brightloop.com',
+            full_name: 'Sarah Jenkins (Staff)',
+            email: email.trim().toLowerCase(),
             role: 'staff',
-            company_name: 'Brightloop Software Inc.'
+            company_name: 'Brightloop Operations Team'
           };
           authToken = 'brightloop_jwt_staff';
-        } else if (email.toLowerCase().includes('cornerbakery') || email.toLowerCase().includes('alice')) {
+        } else if (email.toLowerCase().includes('user') || email.toLowerCase().includes('cornerbakery') || email.toLowerCase().includes('alice') || email.toLowerCase().includes('customer')) {
           loggedInUser = {
-            id: 3,
-            full_name: 'Alice Smith',
-            email: 'alice@cornerbakery.com',
+            id: 4,
+            full_name: 'Alex Morgan (Customer)',
+            email: email.trim().toLowerCase(),
             role: 'customer',
             company_name: 'Corner Bakery & Cafe'
           };
@@ -256,28 +256,31 @@ export default function LoginForm({ onLoginSuccess, onForgotPassword }) {
             onClick={() => fillQuickDemo('admin@brightloop.com', 'Admin@BrightLoop2026!')}
             className="neu-btn"
             style={{ padding: '8px 10px', fontSize: '0.76rem', borderRadius: '10px' }}
-            title="Elena Vance (Admin)"
+            title="Elena Vance (admin@brightloop.com)"
           >
             👑 Admin
           </button>
           <button
             type="button"
-            onClick={() => fillQuickDemo('sarah.ops@brightloop.com', 'Staff@BrightLoop2026!')}
+            onClick={() => fillQuickDemo('staff@brightloop.com', 'Staff@BrightLoop2026!')}
             className="neu-btn"
             style={{ padding: '8px 10px', fontSize: '0.76rem', borderRadius: '10px' }}
-            title="Sarah Jenkins (Staff)"
+            title="Sarah Jenkins (staff@brightloop.com)"
           >
             💼 Staff
           </button>
           <button
             type="button"
-            onClick={() => fillQuickDemo('demo.customer@example.test', 'DemoCustomer@2026!')}
+            onClick={() => fillQuickDemo('user@brightloop.com', 'User@BrightLoop2026!')}
             className="neu-btn"
             style={{ padding: '8px 10px', fontSize: '0.76rem', borderRadius: '10px' }}
-            title="Demo Customer"
+            title="Alex Morgan (user@brightloop.com)"
           >
-            🏢 Customer
+            👤 User
           </button>
+        </div>
+        <div style={{ marginTop: '10px', fontSize: '0.73rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+          ✨ Direct SQLite Database Logins: <strong>admin</strong>, <strong>staff</strong>, and <strong>user</strong>
         </div>
       </div>
     </form>
