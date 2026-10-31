@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   FileText,
   Plus,
@@ -26,7 +26,7 @@ import { useSubscription } from '../context/SubscriptionContext';
 export default function SubscriptionsPage() {
   const {
     subscriptions,
-    plans,
+    productPlans,
     products,
     discounts,
     quotationTemplates,
@@ -36,6 +36,18 @@ export default function SubscriptionsPage() {
     validateDiscount
   } = useSubscription();
 
+  // Flatten all active product plans into a single list for the plan selector
+  const allActivePlans = useMemo(() => {
+    const result = [];
+    Object.entries(productPlans).forEach(([productId, plans]) => {
+      const product = products.find(p => p.id === productId);
+      (plans || []).filter(pl => pl.isActive).forEach(plan => {
+        result.push({ ...plan, productName: product?.name || 'Unknown Product' });
+      });
+    });
+    return result;
+  }, [productPlans, products]);
+
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedSub, setSelectedSub] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -43,16 +55,16 @@ export default function SubscriptionsPage() {
   // New Quote / Subscription state
   const [formCustomer, setFormCustomer] = useState('');
   const [formEmail, setFormEmail] = useState('');
-  const [formPlanId, setFormPlanId] = useState(plans[0]?.id || 'plan-1');
+  const [formPlanId, setFormPlanId] = useState(allActivePlans[0]?.id || '');
   const [formPaymentTerms, setFormPaymentTerms] = useState('Net 30');
   const [formDiscountCode, setFormDiscountCode] = useState('');
   const [formItems, setFormItems] = useState([
     {
       productId: products[0]?.id || 'prod-1',
-      name: products[0]?.name || 'Brightloop ERP Business Core',
+      name: products[0]?.name || 'Software Product',
       variant: 'Standard Edition',
       quantity: 1,
-      unitPrice: 240,
+      unitPrice: products[0]?.salesPrice || 0,
       taxRate: 0.10
     }
   ]);
@@ -65,8 +77,9 @@ export default function SubscriptionsPage() {
 
   // Apply a template
   const applyTemplate = (template) => {
-    const templatePlan = plans.find((p) => p.id === template.planId) || plans[0];
-    setFormPlanId(templatePlan.id);
+    // Find plan from allActivePlans or fall back
+    const templatePlan = allActivePlans.find((p) => p.id === template.planId) || allActivePlans[0];
+    if (templatePlan) setFormPlanId(templatePlan.id);
     const mappedItems = template.items.map((item) => {
       const prod = products.find((p) => p.id === item.productId);
       return {
@@ -166,15 +179,15 @@ export default function SubscriptionsPage() {
 
   const handleCreateSubmit = (e, initialStatus = 'Draft') => {
     e.preventDefault();
-    const selectedPlanObj = plans.find((p) => p.id === formPlanId) || plans[0];
+    const selectedPlanObj = allActivePlans?.find((p) => p.id === formPlanId) || { id: formPlanId, name: 'Standard Plan', billingInterval: 'monthly' };
     const financials = calculateFormFinancials();
 
     const created = createSubscription({
       customerName: formCustomer,
       customerEmail: formEmail,
-      planId: selectedPlanObj.id,
-      planName: selectedPlanObj.name,
-      billingFrequency: selectedPlanObj.frequency,
+      planId: selectedPlanObj?.id || formPlanId,
+      planName: selectedPlanObj?.name || 'Custom Plan',
+      billingFrequency: selectedPlanObj?.billingInterval || selectedPlanObj?.frequency || 'monthly',
       startDate: new Date().toISOString().split('T')[0],
       expiryDate: new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
       nextBillingDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
@@ -600,17 +613,23 @@ export default function SubscriptionsPage() {
                   <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
                     Billing Plan
                   </label>
-                  <select
-                    value={formPlanId}
-                    onChange={(e) => setFormPlanId(e.target.value)}
-                    className="neu-inset neu-input"
-                  >
-                    {plans.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} (${p.cost}/{p.frequency})
-                      </option>
-                    ))}
-                  </select>
+                  {allActivePlans.length === 0 ? (
+                    <div className="neu-inset-sm" style={{ padding: '10px 12px', fontSize: '0.8rem', color: 'var(--text-muted)', borderRadius: '10px' }}>
+                      No active plans available. Create plans in Products &amp; Plans first.
+                    </div>
+                  ) : (
+                    <select
+                      value={formPlanId}
+                      onChange={(e) => setFormPlanId(e.target.value)}
+                      className="neu-inset neu-input"
+                    >
+                      {allActivePlans.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.productName} — {p.name} (₹{p.price}/{p.billingInterval})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div>
