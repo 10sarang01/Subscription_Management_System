@@ -1,15 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import {
-  initialProducts,
-  initialQuotationTemplates,
-  initialSubscriptions,
-  initialInvoices,
-  initialDiscounts,
-  initialPayments,
-  defaultPersonas
-} from '../data/mockData';
+import { defaultPersonas } from '../data/mockData';
 
 const SubscriptionContext = createContext();
+
+// ── Date helpers ─────────────────────────────────────────────────────────────
+
 function getLocalDateString(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -48,52 +43,37 @@ function createSubscriptionId() {
   return `sub-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// ── API helper ───────────────────────────────────────────────────────────────
+
+async function apiFetch(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `API error ${res.status}`);
+  return data;
+}
+
+// ── Provider ─────────────────────────────────────────────────────────────────
+
 export function SubscriptionProvider({ children, initialUser }) {
-  // ── Products (localStorage persisted) ──────────────────────────────────
-  const [products, setProducts] = useState(() => {
-    const saved = localStorage.getItem('brightloop_products');
-    return saved ? JSON.parse(saved) : initialProducts;
-  });
+  // All data lives in server state (brightloop.db) — no localStorage for data
+  const [products, setProducts] = useState([]);
+  const [productPlans, setProductPlans] = useState({}); // { [productId]: Plan[] }
+  const [quotationTemplates, setQuotationTemplates] = useState([]);
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [discounts, setDiscounts] = useState([]);
+  const [payments, setPayments] = useState([]);
 
-  // ── Product-scoped plans: { [productId]: Plan[] } ──────────────────────
-  // Persisted in localStorage as well; synced from backend when available
-  const [productPlans, setProductPlans] = useState(() => {
-    const saved = localStorage.getItem('brightloop_product_plans');
-    return saved ? JSON.parse(saved) : {};
-  });
+  const [loading, setLoading] = useState(true);
 
-  const [quotationTemplates, setQuotationTemplates] = useState(() => {
-    const saved = localStorage.getItem('brightloop_templates');
-    return saved ? JSON.parse(saved) : initialQuotationTemplates;
-  });
-
-  const [subscriptions, setSubscriptions] = useState(() => {
-    const saved = localStorage.getItem('brightloop_subscriptions');
-    return saved ? JSON.parse(saved) : initialSubscriptions;
-  });
-
-  const [invoices, setInvoices] = useState(() => {
-    const saved = localStorage.getItem('brightloop_invoices');
-    return saved ? JSON.parse(saved) : initialInvoices;
-  });
-
-  const [discounts, setDiscounts] = useState(() => {
-    const saved = localStorage.getItem('brightloop_discounts');
-    return saved ? JSON.parse(saved) : initialDiscounts;
-  });
-
-  const [payments, setPayments] = useState(() => {
-    const saved = localStorage.getItem('brightloop_payments');
-    return saved ? JSON.parse(saved) : initialPayments;
-  });
-
-  // Current active persona
   const [currentPersona, setCurrentPersona] = useState(() => {
     if (initialUser) return initialUser;
     return defaultPersonas[0];
   });
 
-  // Toast notification
   const [toast, setToast] = useState(null);
 
   const showToast = (message, type = 'info') => {
@@ -101,56 +81,58 @@ export function SubscriptionProvider({ children, initialUser }) {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // ── localStorage sync ─────────────────────────────────────────────────
-  useEffect(() => {
-    localStorage.setItem('brightloop_products', JSON.stringify(products));
-  }, [products]);
+  // ── Load all data from brightloop.db on mount ────────────────────────────
 
-  useEffect(() => {
-    localStorage.setItem('brightloop_product_plans', JSON.stringify(productPlans));
-  }, [productPlans]);
-
-  useEffect(() => {
-    localStorage.setItem('brightloop_subscriptions', JSON.stringify(subscriptions));
-  }, [subscriptions]);
-
-  useEffect(() => {
-    localStorage.setItem('brightloop_invoices', JSON.stringify(invoices));
-  }, [invoices]);
-
-  useEffect(() => {
-    localStorage.setItem('brightloop_discounts', JSON.stringify(discounts));
-  }, [discounts]);
-
-  useEffect(() => {
-    localStorage.setItem('brightloop_payments', JSON.stringify(payments));
-  }, [payments]);
-
-  // Fetch live discounts from SQLite database on mount
-  const fetchDiscounts = useCallback(async () => {
+  const loadAllData = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await fetch('/api/discounts');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.discounts && Array.isArray(data.discounts)) {
-          setDiscounts(data.discounts);
-          return data.discounts;
-        }
-      }
+      const [
+        prodData,
+        subsData,
+        invData,
+        payData,
+        discData,
+        tmplData
+      ] = await Promise.all([
+        apiFetch('/api/products').catch(() => ({ products: [] })),
+        apiFetch('/api/subscriptions').catch(() => ({ subscriptions: [] })),
+        apiFetch('/api/invoices').catch(() => ({ invoices: [] })),
+        apiFetch('/api/payments').catch(() => ({ payments: [] })),
+        apiFetch('/api/discounts').catch(() => ({ discounts: [] })),
+        apiFetch('/api/templates').catch(() => ({ templates: [] }))
+      ]);
+
+      const dbProducts = prodData.products || [];
+      setProducts(dbProducts);
+      setSubscriptions(subsData.subscriptions || []);
+      setInvoices(invData.invoices || []);
+      setPayments(payData.payments || []);
+      setDiscounts(discData.discounts || []);
+      setQuotationTemplates(tmplData.templates || []);
+
+      // Fetch plans for all products
+      const plansMap = {};
+      await Promise.all(
+        dbProducts.map(async (p) => {
+          try {
+            const pData = await apiFetch(`/api/products/${p.id}/plans`);
+            plansMap[p.id] = pData.plans || [];
+          } catch { plansMap[p.id] = []; }
+        })
+      );
+      setProductPlans(plansMap);
     } catch (err) {
-      console.warn('API error fetching discounts, relying on localStorage/initialDiscounts:', err);
+      console.warn('Failed to load data from DB:', err.message);
+    } finally {
+      setLoading(false);
     }
-    return null;
   }, []);
 
   useEffect(() => {
-    fetchDiscounts();
-  }, [fetchDiscounts]);
+    loadAllData();
+  }, [loadAllData]);
 
-  // Note: Products and plans are persisted in localStorage.
-  // Backend sync happens on individual add/delete operations (with graceful fallback).
-
-  // ── Product Actions ───────────────────────────────────────────────────
+  // ── Product Actions ───────────────────────────────────────────────────────
 
   const addProduct = async (newProduct) => {
     const cleanProduct = {
@@ -163,45 +145,27 @@ export function SubscriptionProvider({ children, initialUser }) {
       }))
     };
 
-    let savedProduct = null;
     try {
-      const res = await fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleanProduct)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        savedProduct = data.product;
-      }
-    } catch {
-      // API offline, saving locally
+      const data = await apiFetch('/api/products', { method: 'POST', body: JSON.stringify(cleanProduct) });
+      const savedProduct = data.product;
+      setProducts((prev) => [savedProduct, ...prev]);
+      setProductPlans((prev) => ({ ...prev, [savedProduct.id]: [] }));
+      showToast(`Product "${savedProduct.name}" created!`, 'success');
+      return savedProduct;
+    } catch (err) {
+      showToast(`Failed to create product: ${err.message}`, 'error');
+      return null;
     }
-
-    if (!savedProduct) {
-      savedProduct = { ...cleanProduct, id: `prod-${Date.now()}` };
-    }
-
-    setProducts((prev) => [savedProduct, ...prev.filter(p => p.id !== savedProduct.id)]);
-    // Initialize empty plans array for this product
-    setProductPlans((prev) => ({ ...prev, [savedProduct.id]: prev[savedProduct.id] || [] }));
-    showToast(`Product "${savedProduct.name}" created!`, 'success');
-    return savedProduct;
   };
 
   const deleteProduct = async (id) => {
     try {
-      await fetch(`/api/products/${id}`, { method: 'DELETE' });
-    } catch {
-      // offline
+      await apiFetch(`/api/products/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('deleteProduct error:', err.message);
     }
     setProducts((prev) => prev.filter((p) => p.id !== id));
-    // Remove associated plans
-    setProductPlans((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
+    setProductPlans((prev) => { const next = { ...prev }; delete next[id]; return next; });
     showToast('Product and its plans removed.', 'info');
   };
 
@@ -218,202 +182,128 @@ export function SubscriptionProvider({ children, initialUser }) {
       } : {})
     };
 
-    let updatedProduct = null;
     try {
-      const res = await fetch(`/api/products/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleanUpdates)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        updatedProduct = data.product;
-      }
-    } catch {
-      // offline
+      const data = await apiFetch(`/api/products/${id}`, { method: 'PUT', body: JSON.stringify(cleanUpdates) });
+      const updatedProduct = data.product;
+      setProducts((prev) => prev.map((p) => p.id === id ? updatedProduct : p));
+      showToast(`Product "${updatedProduct.name}" updated!`, 'success');
+      return updatedProduct;
+    } catch (err) {
+      showToast(`Failed to update product: ${err.message}`, 'error');
+      return null;
     }
-
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id !== id) return p;
-        return updatedProduct || { ...p, ...cleanUpdates };
-      })
-    );
-    showToast(`Product "${cleanUpdates.name || 'details'}" updated successfully!`, 'success');
-    return updatedProduct;
   };
 
-  // ── Product-scoped Plan Actions ───────────────────────────────────────
+  // ── Product-scoped Plan Actions ───────────────────────────────────────────
 
-  /**
-   * Get all plans for a specific product (from state, optionally refresh from API)
-   */
   const getPlansForProduct = useCallback((productId) => {
     return productPlans[productId] || [];
   }, [productPlans]);
 
-  /**
-   * Fetch plans for a product from the backend and merge into state
-   */
-  const fetchPlansForProduct = useCallback(async (productId, authToken) => {
+  const fetchPlansForProduct = useCallback(async (productId) => {
     try {
-      const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
-      const res = await fetch(`/api/products/${productId}/plans`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        setProductPlans((prev) => ({ ...prev, [productId]: data.plans }));
-        return data.plans;
-      }
+      const data = await apiFetch(`/api/products/${productId}/plans`);
+      setProductPlans((prev) => ({ ...prev, [productId]: data.plans || [] }));
+      return data.plans || [];
     } catch {
-      // Backend offline – using local state
+      return productPlans[productId] || [];
     }
-    return productPlans[productId] || [];
   }, [productPlans]);
 
-  /**
-   * Add a new plan to a product
-   */
-  const addProductPlan = async (productId, planData, authToken) => {
+  const addProductPlan = async (productId, planData) => {
     const cleanPlan = {
       ...planData,
       price: Math.max(0, parseFloat(planData.price) || 0),
       minimumQuantity: Math.max(1, parseInt(planData.minimumQuantity) || 1)
     };
 
-    let savedPlan = null;
     try {
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
-      };
-      const res = await fetch(`/api/products/${productId}/plans`, {
+      // Ensure the product is in DB (handles edge case where product was deleted/re-created)
+      const prodCheck = await apiFetch('/api/products').catch(() => ({ products: [] }));
+      const prodExists = (prodCheck.products || []).some(p => p.id === productId);
+      if (!prodExists) {
+        const localProd = products.find(p => p.id === productId);
+        if (localProd) {
+          await apiFetch('/api/products', { method: 'POST', body: JSON.stringify(localProd) });
+        }
+      }
+
+      const data = await apiFetch(`/api/products/${productId}/plans`, {
         method: 'POST',
-        headers,
         body: JSON.stringify(cleanPlan)
       });
-      if (res.ok) {
-        const data = await res.json();
-        savedPlan = data.plan;
-      }
-    } catch {
-      // offline
+      const savedPlan = data.plan;
+      setProductPlans((prev) => ({
+        ...prev,
+        [productId]: [...(prev[productId] || []), savedPlan]
+      }));
+      showToast(`Plan "${savedPlan.name}" added!`, 'success');
+      return savedPlan;
+    } catch (err) {
+      showToast(`Failed to create plan: ${err.message}`, 'error');
+      return null;
     }
-
-    if (!savedPlan) {
-      savedPlan = {
-        ...cleanPlan,
-        id: `pp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        productId,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-    }
-
-    setProductPlans((prev) => ({
-      ...prev,
-      [productId]: [...(prev[productId] || []), savedPlan]
-    }));
-    showToast(`Plan "${savedPlan.name}" added to product!`, 'success');
-    return savedPlan;
   };
 
-  /**
-   * Update an existing product plan
-   */
-  const updateProductPlan = async (planId, productId, updates, authToken) => {
+  const updateProductPlan = async (planId, productId, updates) => {
     const cleanUpdates = {
       ...updates,
       ...(updates.price !== undefined ? { price: Math.max(0, parseFloat(updates.price) || 0) } : {}),
       ...(updates.minimumQuantity !== undefined ? { minimumQuantity: Math.max(1, parseInt(updates.minimumQuantity) || 1) } : {})
     };
 
-    let updatedPlan = null;
     try {
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
-      };
-      const res = await fetch(`/api/plans/${planId}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify(cleanUpdates)
+      const data = await apiFetch(`/api/plans/${planId}`, { method: 'PUT', body: JSON.stringify(cleanUpdates) });
+      const updatedPlan = data.plan;
+      setProductPlans((prev) => {
+        const current = prev[productId] || [];
+        return { ...prev, [productId]: current.map(p => p.id === planId ? updatedPlan : p) };
       });
-      if (res.ok) {
-        const data = await res.json();
-        updatedPlan = data.plan;
-      }
-    } catch {
-      // offline
+      showToast('Plan updated successfully!', 'success');
+    } catch (err) {
+      showToast(`Failed to update plan: ${err.message}`, 'error');
     }
-
-    setProductPlans((prev) => {
-      const current = prev[productId] || [];
-      const next = current.map((p) => {
-        if (p.id !== planId) return p;
-        return updatedPlan || { ...p, ...cleanUpdates, updatedAt: new Date().toISOString() };
-      });
-      return { ...prev, [productId]: next };
-    });
-    showToast('Plan updated successfully!', 'success');
   };
 
-  /**
-   * Toggle plan active/inactive status
-   */
-  const toggleProductPlan = async (planId, productId, isActive, authToken) => {
+  const toggleProductPlan = async (planId, productId, isActive) => {
     try {
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
-      };
-      await fetch(`/api/plans/${planId}/status`, {
+      await apiFetch(`/api/plans/${planId}/status`, {
         method: 'PATCH',
-        headers,
         body: JSON.stringify({ isActive })
       });
-    } catch {
-      // offline
+    } catch (err) {
+      console.warn('toggleProductPlan error:', err.message);
     }
-
     setProductPlans((prev) => {
       const current = prev[productId] || [];
-      const next = current.map((p) =>
-        p.id === planId ? { ...p, isActive } : p
-      );
-      return { ...prev, [productId]: next };
+      return { ...prev, [productId]: current.map(p => p.id === planId ? { ...p, isActive } : p) };
     });
     showToast(`Plan ${isActive ? 'activated' : 'deactivated'}.`, 'info');
   };
 
-  /**
-   * Delete a product plan
-   */
-  const deleteProductPlan = async (planId, productId, authToken) => {
+  const deleteProductPlan = async (planId, productId) => {
     try {
-      const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
-      await fetch(`/api/plans/${planId}`, { method: 'DELETE', headers });
-    } catch {
-      // offline
+      await apiFetch(`/api/plans/${planId}`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('deleteProductPlan error:', err.message);
     }
-
     setProductPlans((prev) => {
       const current = prev[productId] || [];
-      return { ...prev, [productId]: current.filter((p) => p.id !== planId) };
+      return { ...prev, [productId]: current.filter(p => p.id !== planId) };
     });
     showToast('Plan removed.', 'info');
   };
 
-  // ── Subscription Actions ──────────────────────────────────────────────
+  // ── Subscription Actions ──────────────────────────────────────────────────
 
-  const createSubscription = (quoteData) => {
+  const createSubscription = async (quoteData) => {
     const today = getLocalDateString();
     const status = quoteData.status || 'Draft';
     const numberPrefix = ['Draft', 'Quotation'].includes(status) ? 'QT' : 'SUB';
     const parsedValidityDays = Number.parseInt(quoteData.quoteValidityDays, 10);
     const quoteValidityDays = Number.isInteger(parsedValidityDays) && parsedValidityDays > 0
-      ? parsedValidityDays
-      : 30;
+      ? parsedValidityDays : 30;
+
     const newSub = {
       ...quoteData,
       id: createSubscriptionId(),
@@ -425,12 +315,20 @@ export function SubscriptionProvider({ children, initialUser }) {
       createdAt: quoteData.createdAt || today,
       updatedAt: today
     };
-    setSubscriptions((prev) => [newSub, ...prev]);
-    showToast(`${numberPrefix === 'QT' ? 'Quotation' : 'Subscription'} ${newSub.subNumber} created in ${status} status!`, 'success');
-    return newSub;
+
+    try {
+      const data = await apiFetch('/api/subscriptions', { method: 'POST', body: JSON.stringify(newSub) });
+      const saved = data.subscription;
+      setSubscriptions((prev) => [saved, ...prev]);
+      showToast(`${numberPrefix === 'QT' ? 'Quotation' : 'Subscription'} ${saved.subNumber} created!`, 'success');
+      return saved;
+    } catch (err) {
+      showToast(`Failed to create subscription: ${err.message}`, 'error');
+      return null;
+    }
   };
 
-  const updateSubscriptionStatus = (id, newStatus) => {
+  const updateSubscriptionStatus = async (id, newStatus) => {
     const currentSub = subscriptions.find((sub) => sub.id === id);
     if (!currentSub) return null;
     const today = getLocalDateString();
@@ -443,8 +341,7 @@ export function SubscriptionProvider({ children, initialUser }) {
       : currentSub.subNumber;
     const parsedValidityDays = Number.parseInt(currentSub.quoteValidityDays, 10);
     const quoteValidityDays = Number.isInteger(parsedValidityDays) && parsedValidityDays > 0
-      ? parsedValidityDays
-      : 30;
+      ? parsedValidityDays : 30;
     const isIssuingQuotation = newStatus === 'Quotation' && currentSub.status !== 'Quotation';
     const updatedSub = {
       ...currentSub,
@@ -458,34 +355,32 @@ export function SubscriptionProvider({ children, initialUser }) {
         ...(isReissuedQuotation ? { renewalOf: currentSub.subNumber } : {})
       } : {})
     };
-    setSubscriptions((prev) => prev.map((sub) => sub.id === id ? updatedSub : sub));
-    showToast(`Subscription updated to status: ${newStatus}`, 'info');
-    return updatedSub;
-  };
-  // ── Billing Day Engine: Scene 4 & 5 ───────────────────────────────────
 
-  // Helper to advance date by billing frequency
+    try {
+      const data = await apiFetch(`/api/subscriptions/${id}`, { method: 'PUT', body: JSON.stringify(updatedSub) });
+      const saved = data.subscription;
+      setSubscriptions((prev) => prev.map((sub) => sub.id === id ? saved : sub));
+      showToast(`Subscription updated to: ${newStatus}`, 'info');
+      return saved;
+    } catch (err) {
+      showToast(`Failed to update subscription: ${err.message}`, 'error');
+      return null;
+    }
+  };
+
+  // ── Billing Engine ────────────────────────────────────────────────────────
+
   const advanceBillingDate = (dateStr, frequency = 'monthly') => {
     const d = new Date(dateStr || Date.now());
     switch (frequency) {
-      case 'daily':
-        d.setDate(d.getDate() + 1);
-        break;
-      case 'weekly':
-        d.setDate(d.getDate() + 7);
-        break;
-      case 'yearly':
-        d.setFullYear(d.getFullYear() + 1);
-        break;
-      case 'monthly':
-      default:
-        d.setMonth(d.getMonth() + 1);
-        break;
+      case 'daily': d.setDate(d.getDate() + 1); break;
+      case 'weekly': d.setDate(d.getDate() + 7); break;
+      case 'yearly': d.setFullYear(d.getFullYear() + 1); break;
+      case 'monthly': default: d.setMonth(d.getMonth() + 1); break;
     }
     return d.toISOString().split('T')[0];
   };
 
-  // Helper to compute invoice due date based on payment terms
   const computeDueDate = (issueDateStr, paymentTerms = 'Net 15') => {
     const issueDate = new Date(issueDateStr || Date.now());
     let daysToAdd = 15;
@@ -496,12 +391,10 @@ export function SubscriptionProvider({ children, initialUser }) {
     return issueDate.toISOString().split('T')[0];
   };
 
-  // Inspection helper: returns subscriptions that are due vs already billed
   const getDueSubscriptions = (targetDateStr = new Date().toISOString().split('T')[0]) => {
     const activeSubs = subscriptions.filter((s) => s.status === 'Active');
     const due = [];
     const alreadyBilled = [];
-
     activeSubs.forEach((sub) => {
       const isAlreadyInvoiced = invoices.some((inv) => {
         if (inv.subscriptionNumber !== sub.subNumber || inv.status === 'Cancelled') return false;
@@ -510,97 +403,51 @@ export function SubscriptionProvider({ children, initialUser }) {
         if (sub.billingFrequency === 'yearly' && inv.issueDate?.slice(0, 4) === targetDateStr.slice(0, 4)) return true;
         return false;
       });
-
       if (isAlreadyInvoiced) {
         alreadyBilled.push(sub);
       } else {
         const isDateDue = !sub.nextBillingDate || sub.nextBillingDate <= targetDateStr;
-        if (isDateDue) {
-          due.push(sub);
-        }
+        if (isDateDue) due.push(sub);
       }
     });
-
     return { due, alreadyBilled };
   };
 
-  // Universal Discount Validator: Scene 5
-  const validateDiscount = ({
-    code,
-    items = [],
-    subtotal = 0,
-    date = new Date().toISOString().split('T')[0]
-  }) => {
+  const validateDiscount = ({ code, items = [], subtotal = 0, date = new Date().toISOString().split('T')[0] }) => {
     if (!code || !code.trim()) return { valid: false, message: '' };
     const cleanCode = code.trim().toUpperCase();
     const rule = discounts.find((d) => d.code.toUpperCase() === cleanCode);
+    if (!rule) return { valid: false, message: `Coupon code "${cleanCode}" does not exist.` };
+    if (!rule.isActive) return { valid: false, message: `Discount rule "${rule.code}" is currently deactivated.` };
+    if (rule.endDate && date > rule.endDate) return { valid: false, message: `Discount code "${rule.code}" expired on ${rule.endDate}.` };
+    if (rule.startDate && date < rule.startDate) return { valid: false, message: `Discount code "${rule.code}" is not valid until ${rule.startDate}.` };
+    if (rule.usageLimit !== undefined && (rule.timesUsed || 0) >= rule.usageLimit) return { valid: false, message: `Discount limit reached: ${rule.usageLimit} redemptions exhausted.` };
 
-    if (!rule) {
-      return { valid: false, message: `Coupon code "${cleanCode}" does not exist.` };
-    }
-    if (!rule.isActive) {
-      return { valid: false, message: `Discount rule "${rule.code}" is currently deactivated or inactive.` };
-    }
-    if (rule.endDate && date > rule.endDate) {
-      return { valid: false, message: `Discount code "${rule.code}" expired on ${rule.endDate}.` };
-    }
-    if (rule.startDate && date < rule.startDate) {
-      return { valid: false, message: `Discount code "${rule.code}" is not valid until ${rule.startDate}.` };
-    }
-    if (rule.usageLimit !== undefined && (rule.timesUsed || 0) >= rule.usageLimit) {
-      return { valid: false, message: `Discount limit reached: Capacity of ${rule.usageLimit} redemptions exhausted.` };
-    }
-
-    // Check volume threshold: "A customer wants a discount for taking more seats"
     const totalQuantity = items.reduce((sum, it) => sum + (parseInt(it.quantity, 10) || 1), 0);
     if (rule.minQuantity && totalQuantity < rule.minQuantity) {
-      return {
-        valid: false,
-        rule,
-        message: `Volume threshold: Requires at least ${rule.minQuantity} seats/units (currently taking ${totalQuantity}). Add ${rule.minQuantity - totalQuantity} more to qualify!`
-      };
+      return { valid: false, rule, message: `Volume threshold: Requires at least ${rule.minQuantity} seats (currently ${totalQuantity}).` };
     }
-
-    // Check minimum spend
     if (rule.minAmount && subtotal < rule.minAmount) {
-      return {
-        valid: false,
-        rule,
-        message: `Minimum spend: Requires at least $${rule.minAmount.toFixed(2)} (current: $${subtotal.toFixed(2)}).`
-      };
+      return { valid: false, rule, message: `Minimum spend: Requires at least $${rule.minAmount.toFixed(2)} (current: $${subtotal.toFixed(2)}).` };
     }
 
-    // Calculate deduction based on Scope (specific_product vs whole_subscription)
     let deduction = 0;
     if (rule.scope === 'specific_product' && rule.targetProductId) {
       const eligibleItems = items.filter((it) => it.productId === rule.targetProductId);
       const eligibleSubtotal = eligibleItems.reduce((sum, it) => sum + ((parseInt(it.quantity, 10) || 0) * (parseFloat(it.unitPrice) || 0)), 0);
-      if (eligibleSubtotal <= 0) {
-        return {
-          valid: false,
-          rule,
-          message: `Applies specifically to target product, which is not present in this contract.`
-        };
-      }
-      deduction = rule.type === 'percentage'
-        ? (eligibleSubtotal * rule.value) / 100
-        : Math.min(rule.value, eligibleSubtotal);
+      if (eligibleSubtotal <= 0) return { valid: false, rule, message: `Applies specifically to target product, which is not present in this contract.` };
+      deduction = rule.type === 'percentage' ? (eligibleSubtotal * rule.value) / 100 : Math.min(rule.value, eligibleSubtotal);
     } else {
-      deduction = rule.type === 'percentage'
-        ? (subtotal * rule.value) / 100
-        : Math.min(rule.value, subtotal);
+      deduction = rule.type === 'percentage' ? (subtotal * rule.value) / 100 : Math.min(rule.value, subtotal);
     }
 
     return {
-      valid: true,
-      rule,
-      deduction,
+      valid: true, rule, deduction,
       message: `✅ "${rule.name}" applied: ${rule.type === 'percentage' ? `${rule.value}% off` : `$${rule.value} off`} (-$${deduction.toFixed(2)})`
     };
   };
 
-  // Billing Day Engine: Scene 4 & Scene 5
-  const runBillingDay = (targetDateStr = new Date().toISOString().split('T')[0]) => {
+  const runBillingDay = async (targetDateStr = new Date().toISOString().split('T')[0]) => {
     const { due } = getDueSubscriptions(targetDateStr);
     let generatedCount = 0;
     let totalGeneratedAmount = 0;
@@ -623,10 +470,7 @@ export function SubscriptionProvider({ children, initialUser }) {
         return {
           productId: item.productId,
           name: `${item.name} (${item.variant || 'Standard Edition'})`,
-          quantity: qty,
-          unitPrice: price,
-          taxRate,
-          taxAmount: lineTax,
+          quantity: qty, unitPrice: price, taxRate, taxAmount: lineTax,
           total: lineSubtotal + lineTax
         };
       });
@@ -634,12 +478,7 @@ export function SubscriptionProvider({ children, initialUser }) {
       let discountDeduction = 0;
       let appliedDiscountRule = null;
       if (sub.discountCode) {
-        const validation = validateDiscount({
-          code: sub.discountCode,
-          items: sub.items,
-          subtotal,
-          date: targetDateStr
-        });
+        const validation = validateDiscount({ code: sub.discountCode, items: sub.items, subtotal, date: targetDateStr });
         if (validation.valid) {
           discountDeduction = validation.deduction;
           appliedDiscountRule = validation.rule;
@@ -648,16 +487,15 @@ export function SubscriptionProvider({ children, initialUser }) {
       }
 
       if (discountDeduction > 0 && subtotal > 0) {
-        const discountRatio = (subtotal - discountDeduction) / subtotal;
-        taxTotal = taxTotal * discountRatio;
+        taxTotal = taxTotal * ((subtotal - discountDeduction) / subtotal);
       }
 
       const total = Math.max(0, subtotal - discountDeduction + taxTotal);
       const dueDate = computeDueDate(targetDateStr, sub.paymentTerms);
 
-      const newInvoice = {
+      newInvoicesList.push({
         id: `inv-${Date.now()}-${generatedCount}`,
-        invoiceNumber: `INV-2026-${String(invoices.length + generatedCount + 1).padStart(3, '0')}`,
+        invoiceNumber: `INV-${new Date().getFullYear()}-${String(invoices.length + generatedCount + 1).padStart(3, '0')}`,
         subscriptionNumber: sub.subNumber,
         customerName: sub.customerName,
         customerEmail: sub.customerEmail,
@@ -665,106 +503,104 @@ export function SubscriptionProvider({ children, initialUser }) {
         dueDate,
         billingPeriodStart: sub.nextBillingDate || targetDateStr,
         billingPeriodEnd: advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency),
-        subtotal,
-        taxTotal,
+        subtotal, taxTotal,
         discountAmount: discountDeduction,
         discountCode: appliedDiscountRule ? appliedDiscountRule.code : null,
-        total,
-        amountPaid: 0,
-        balance: total,
-        status: 'Confirmed',
-        sentAt: null,
-        items: invoiceItems
-      };
+        total, amountPaid: 0, balance: total,
+        status: 'Confirmed', sentAt: null, items: invoiceItems
+      });
 
-      newInvoicesList.push(newInvoice);
       updatedSubIds.add(sub.id);
       generatedCount++;
       totalGeneratedAmount += total;
     });
 
     if (newInvoicesList.length > 0) {
-      setInvoices((prev) => [...newInvoicesList, ...prev]);
+      // Persist all new invoices to DB
+      try {
+        const bulkRes = await apiFetch('/api/invoices/bulk', {
+          method: 'POST',
+          body: JSON.stringify({ invoices: newInvoicesList })
+        });
+        setInvoices((prev) => [...(bulkRes.invoices || newInvoicesList), ...prev]);
+      } catch {
+        setInvoices((prev) => [...newInvoicesList, ...prev]);
+      }
 
-      setSubscriptions((prev) =>
-        prev.map((sub) => {
-          if (updatedSubIds.has(sub.id)) {
-            const nextDate = advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency);
-            return {
-              ...sub,
-              lastBillingDate: targetDateStr,
-              nextBillingDate: nextDate
-            };
-          }
-          return sub;
+      // Advance billing dates for processed subscriptions in DB
+      const updatedSubs = await Promise.all(
+        subscriptions.map(async (sub) => {
+          if (!updatedSubIds.has(sub.id)) return sub;
+          const nextDate = advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency);
+          const updates = { ...sub, lastBillingDate: targetDateStr, nextBillingDate: nextDate };
+          try {
+            const d = await apiFetch(`/api/subscriptions/${sub.id}`, { method: 'PUT', body: JSON.stringify(updates) });
+            return d.subscription;
+          } catch { return updates; }
         })
       );
+      setSubscriptions(updatedSubs);
 
+      // Record discount usage in DB
       if (Object.keys(usedDiscountMap).length > 0) {
-        // Sync discount usage to live SQLite database
         Object.entries(usedDiscountMap).forEach(([code, count]) => {
-          fetch('/api/discounts/use', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code, count })
-          }).catch((e) => console.warn('Could not record discount usage in database:', e));
+          apiFetch('/api/discounts/use', { method: 'POST', body: JSON.stringify({ code, count }) })
+            .catch((e) => console.warn('Could not record discount usage:', e.message));
         });
-
         setDiscounts((prev) =>
           prev.map((d) => {
             const count = usedDiscountMap[d.code];
             if (count) {
               const newTimesUsed = (d.timesUsed || 0) + count;
-              const hasRunOut = d.usageLimit && newTimesUsed >= d.usageLimit;
-              return {
-                ...d,
-                timesUsed: newTimesUsed,
-                isActive: hasRunOut ? false : d.isActive
-              };
+              return { ...d, timesUsed: newTimesUsed, isActive: (d.usageLimit && newTimesUsed >= d.usageLimit) ? false : d.isActive };
             }
             return d;
           })
         );
       }
 
-      showToast(
-        `⚡ Billing Day Run: ${newInvoicesList.length} invoices generated ($${totalGeneratedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })})! Next billing dates advanced.`,
-        'success'
-      );
+      showToast(`⚡ Billing Day: ${newInvoicesList.length} invoices generated ($${totalGeneratedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })})!`, 'success');
     } else {
-      showToast(
-        `All active subscriptions are up to date for ${targetDateStr}. No subscriptions due (Double-billing prevented)!`,
-        'info'
-      );
+      showToast(`All active subscriptions are up to date for ${targetDateStr}. No invoices due.`, 'info');
     }
 
     return { generatedCount, totalAmount: totalGeneratedAmount, invoices: newInvoicesList };
   };
 
-  // ── Invoice Actions ───────────────────────────────────────────────────
+  // ── Invoice Actions ───────────────────────────────────────────────────────
 
-  const confirmInvoice = (invoiceId) => {
-    setInvoices((prev) =>
-      prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: 'Confirmed' } : inv))
-    );
+  const confirmInvoice = async (invoiceId) => {
+    try {
+      const data = await apiFetch(`/api/invoices/${invoiceId}`, { method: 'PATCH', body: JSON.stringify({ status: 'Confirmed' }) });
+      setInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? data.invoice : inv));
+    } catch {
+      setInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? { ...inv, status: 'Confirmed' } : inv));
+    }
     showToast('Invoice confirmed and queued for collection.', 'success');
   };
 
-  const cancelInvoice = (invoiceId) => {
-    setInvoices((prev) =>
-      prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: 'Cancelled' } : inv))
-    );
+  const cancelInvoice = async (invoiceId) => {
+    try {
+      const data = await apiFetch(`/api/invoices/${invoiceId}`, { method: 'PATCH', body: JSON.stringify({ status: 'Cancelled' }) });
+      setInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? data.invoice : inv));
+    } catch {
+      setInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? { ...inv, status: 'Cancelled' } : inv));
+    }
     showToast('Invoice has been cancelled.', 'info');
   };
 
-  const sendInvoice = (invoiceId) => {
-    setInvoices((prev) =>
-      prev.map((inv) => (inv.id === invoiceId ? { ...inv, sentAt: new Date().toISOString() } : inv))
-    );
+  const sendInvoice = async (invoiceId) => {
+    const sentAt = new Date().toISOString();
+    try {
+      const data = await apiFetch(`/api/invoices/${invoiceId}`, { method: 'PATCH', body: JSON.stringify({ sentAt }) });
+      setInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? data.invoice : inv));
+    } catch {
+      setInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? { ...inv, sentAt } : inv));
+    }
     showToast('Invoice PDF dispatched via email to customer.', 'success');
   };
 
-  const recordPayment = ({ invoiceId, amount, method, note, transactionRef }) => {
+  const recordPayment = async ({ invoiceId, amount, method, note, transactionRef }) => {
     const targetInvoice = invoices.find((inv) => inv.id === invoiceId);
     if (!targetInvoice) return;
 
@@ -773,17 +609,8 @@ export function SubscriptionProvider({ children, initialUser }) {
     const newBalance = Math.max(0, targetInvoice.total - newPaidTotal);
     const newStatus = newBalance <= 0.01 ? 'Paid' : 'Partially Paid';
 
-    setInvoices((prev) =>
-      prev.map((inv) =>
-        inv.id === invoiceId
-          ? { ...inv, amountPaid: newPaidTotal, balance: newBalance, status: newStatus }
-          : inv
-      )
-    );
-
-    const newPayment = {
-      id: `pay-${Date.now()}`,
-      paymentNumber: `PAY-2026-${String(payments.length + 1).padStart(3, '0')}`,
+    const paymentData = {
+      invoiceId,
       invoiceNumber: targetInvoice.invoiceNumber,
       customerName: targetInvoice.customerName,
       date: new Date().toISOString().split('T')[0],
@@ -791,14 +618,41 @@ export function SubscriptionProvider({ children, initialUser }) {
       amount: paymentAmount,
       transactionRef: transactionRef || `TXN-${Math.floor(100000 + Math.random() * 900000)}`,
       note: note || 'Payment recorded',
-      status: 'Completed'
+      status: 'Completed',
+      paymentNumber: `PAY-${new Date().getFullYear()}-${String(payments.length + 1).padStart(3, '0')}`,
+      // Pass along invoice totals so server can update invoice in one call
+      invoiceTotal: targetInvoice.total,
+      invoiceAmountPaid: targetInvoice.amountPaid || 0
     };
 
-    setPayments((prev) => [newPayment, ...prev]);
+    try {
+      const data = await apiFetch('/api/payments', { method: 'POST', body: JSON.stringify(paymentData) });
+      setPayments((prev) => [data.payment, ...prev]);
+    } catch (err) {
+      console.warn('recordPayment error:', err.message);
+      setPayments((prev) => [{
+        id: `pay-${Date.now()}`,
+        ...paymentData
+      }, ...prev]);
+    }
+
+    setInvoices((prev) =>
+      prev.map((inv) =>
+        inv.id === invoiceId ? { ...inv, amountPaid: newPaidTotal, balance: newBalance, status: newStatus } : inv
+      )
+    );
     showToast(`Payment of $${paymentAmount.toFixed(2)} recorded for ${targetInvoice.invoiceNumber}`, 'success');
   };
 
-  // ── Discount Actions (Live SQLite Persistence) ─────────────────────────
+  // ── Discount Actions ──────────────────────────────────────────────────────
+
+  const fetchDiscounts = useCallback(async () => {
+    try {
+      const data = await apiFetch('/api/discounts');
+      setDiscounts(data.discounts || []);
+      return data.discounts;
+    } catch { return null; }
+  }, []);
 
   const createDiscount = async (discountData) => {
     const cleanData = {
@@ -815,74 +669,40 @@ export function SubscriptionProvider({ children, initialUser }) {
       usageLimit: Math.max(1, parseInt(discountData.usageLimit, 10) || 100)
     };
 
-    let savedDiscount = null;
     try {
-      const res = await fetch('/api/discounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleanData)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        savedDiscount = data.discount;
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        showToast(errData.error || 'Failed to save discount to database', 'error');
-        return null;
-      }
+      const data = await apiFetch('/api/discounts', { method: 'POST', body: JSON.stringify(cleanData) });
+      setDiscounts((prev) => [data.discount, ...prev.filter(d => d.id !== data.discount.id && d.code !== data.discount.code)]);
+      showToast(`Discount rule "${data.discount.code}" created & persisted to database!`, 'success');
+      return data.discount;
     } catch (err) {
-      console.warn('API error saving discount, using local fallback:', err);
+      showToast(err.message || 'Failed to save discount to database', 'error');
+      return null;
     }
-
-    if (!savedDiscount) {
-      savedDiscount = {
-        ...cleanData,
-        id: `disc-${Date.now()}`,
-        timesUsed: 0,
-        isActive: true
-      };
-    }
-
-    setDiscounts((prev) => [savedDiscount, ...prev.filter((d) => d.id !== savedDiscount.id && d.code !== savedDiscount.code)]);
-    showToast(`Discount rule "${savedDiscount.code}" created & persisted to database!`, 'success');
-    return savedDiscount;
   };
 
   const toggleDiscountStatus = async (discountId) => {
     const target = discounts.find((d) => d.id === discountId);
     if (!target) return;
     const newActive = !target.isActive;
-
-    setDiscounts((prev) =>
-      prev.map((d) => (d.id === discountId ? { ...d, isActive: newActive } : d))
-    );
-
+    setDiscounts((prev) => prev.map((d) => d.id === discountId ? { ...d, isActive: newActive } : d));
     try {
-      const res = await fetch(`/api/discounts/${discountId}/status`, {
+      const data = await apiFetch(`/api/discounts/${discountId}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: newActive })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.discount) {
-          setDiscounts((prev) => prev.map((d) => (d.id === discountId ? data.discount : d)));
-        }
-        showToast(`Discount rule "${target.code}" ${newActive ? 'activated' : 'paused'} in database!`, 'info');
-      } else {
-        showToast('Discount status updated locally.', 'warning');
-      }
+      if (data.discount) setDiscounts((prev) => prev.map((d) => d.id === discountId ? data.discount : d));
+      showToast(`Discount "${target.code}" ${newActive ? 'activated' : 'paused'} in database!`, 'info');
     } catch {
-      showToast('Discount status updated locally.', 'warning');
+      showToast('Discount status updated.', 'warning');
     }
   };
 
   const deleteDiscount = async (discountId) => {
     const target = discounts.find((d) => d.id === discountId);
     try {
-      await fetch(`/api/discounts/${discountId}`, { method: 'DELETE' });
+      await apiFetch(`/api/discounts/${discountId}`, { method: 'DELETE' });
     } catch (err) {
-      console.warn('API error deleting discount:', err);
+      console.warn('deleteDiscount error:', err.message);
     }
     setDiscounts((prev) => prev.filter((d) => d.id !== discountId));
     showToast(`Discount rule "${target?.code || discountId}" deleted from database.`, 'info');
@@ -893,34 +713,17 @@ export function SubscriptionProvider({ children, initialUser }) {
     showToast(`Payment reminder email sent to ${inv?.customerEmail || 'customer'} for ${inv?.invoiceNumber}`, 'info');
   };
 
-  // ── Reset ─────────────────────────────────────────────────────────────
+  // ── Reset ─────────────────────────────────────────────────────────────────
 
   const resetToDefaultData = async () => {
-    localStorage.removeItem('brightloop_products');
-    localStorage.removeItem('brightloop_product_plans');
-    localStorage.removeItem('brightloop_subscriptions');
-    localStorage.removeItem('brightloop_invoices');
-    localStorage.removeItem('brightloop_discounts');
-    localStorage.removeItem('brightloop_payments');
-
-    setProducts([]);
-    setProductPlans({});
-    setSubscriptions(initialSubscriptions);
-    setInvoices(initialInvoices);
-    setPayments(initialPayments);
-
-    const refreshed = await fetchDiscounts();
-    if (!refreshed || refreshed.length === 0) {
-      setDiscounts(initialDiscounts);
-    }
-
-    showToast('Platform reset to clean live state!', 'info');
+    await loadAllData();
+    showToast('Data refreshed from database!', 'info');
   };
 
   return (
     <SubscriptionContext.Provider
       value={{
-        // Data
+        // State
         products,
         productPlans,
         quotationTemplates,
@@ -928,6 +731,7 @@ export function SubscriptionProvider({ children, initialUser }) {
         invoices,
         discounts,
         payments,
+        loading,
         currentPersona,
         setCurrentPersona,
         toast,
@@ -960,7 +764,8 @@ export function SubscriptionProvider({ children, initialUser }) {
         fetchDiscounts,
         validateDiscount,
         sendPaymentReminder,
-        resetToDefaultData
+        resetToDefaultData,
+        loadAllData
       }}
     >
       {children}

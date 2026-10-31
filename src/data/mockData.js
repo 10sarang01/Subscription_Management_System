@@ -1,9 +1,7 @@
-// Initial Enterprise Mock Dataset for Brightloop Systems
-// Fully modeled after the Odoo Hackathon Problem Statement
-
-export const initialProducts = [];
-
-export const initialPlans = [];
+// Brightloop Systems - Data Layer
+// All product, plan, subscription, invoice, payment, and discount data
+// is stored exclusively in brightloop.db (SQLite) via the backend API.
+// This file only contains persona definitions for role switching.
 
 export const initialQuotationTemplates = [
   {

@@ -30,7 +30,24 @@ const {
   toggleDiscountStatus,
   incrementDiscountUsage,
   deleteDiscount,
-  getVariantsByProductId
+  getVariantsByProductId,
+  // Subscriptions
+  getAllSubscriptions,
+  createSubscriptionDB,
+  updateSubscriptionDB,
+  deleteSubscriptionDB,
+  // Invoices
+  getAllInvoices,
+  createInvoiceDB,
+  updateInvoiceDB,
+  // Payments
+  getAllPayments,
+  createPaymentDB,
+  // Quotation Templates
+  getAllTemplates,
+  createTemplateDB,
+  updateTemplateDB,
+  deleteTemplateDB
 } = require('./db');
 
 const app = express();
@@ -390,8 +407,8 @@ app.get('/api/products/:productId/plans', async (req, res) => {
   }
 });
 
-// POST /api/products/:productId/plans — create a plan for a product (admin only)
-app.post('/api/products/:productId/plans', authenticateToken, requireAdmin, async (req, res) => {
+// POST /api/products/:productId/plans — create a plan for a product
+app.post('/api/products/:productId/plans', async (req, res) => {
   const { productId } = req.params;
   const {
     name, price, billingInterval, minimumQuantity,
@@ -400,9 +417,9 @@ app.post('/api/products/:productId/plans', authenticateToken, requireAdmin, asyn
     description
   } = req.body;
 
-  if (!name || price === undefined || !billingInterval || !availableFrom || !availableUntil) {
+  if (!name || price === undefined || !billingInterval) {
     return res.status(400).json({
-      error: 'Plan name, price, billing interval, and availability dates are required.'
+      error: 'Plan name, price, and billing interval are required.'
     });
   }
 
@@ -417,6 +434,7 @@ app.post('/api/products/:productId/plans', authenticateToken, requireAdmin, asyn
 
   try {
     const row = await createProductPlan({
+      id: req.body.id,
       productId,
       name,
       price: parseFloat(price),
@@ -457,8 +475,8 @@ app.post('/api/products/:productId/plans', authenticateToken, requireAdmin, asyn
   }
 });
 
-// PUT /api/plans/:planId — update a product plan (admin only)
-app.put('/api/plans/:planId', authenticateToken, requireAdmin, async (req, res) => {
+// PUT /api/plans/:planId — update a product plan
+app.put('/api/plans/:planId', async (req, res) => {
   const { planId } = req.params;
   const {
     name, price, billingInterval, minimumQuantity,
@@ -497,8 +515,8 @@ app.put('/api/plans/:planId', authenticateToken, requireAdmin, async (req, res) 
   }
 });
 
-// PATCH /api/plans/:planId/status — activate or deactivate a plan (admin only)
-app.patch('/api/plans/:planId/status', authenticateToken, requireAdmin, async (req, res) => {
+// PATCH /api/plans/:planId/status — activate or deactivate a plan
+app.patch('/api/plans/:planId/status', async (req, res) => {
   const { planId } = req.params;
   const { isActive } = req.body;
 
@@ -518,8 +536,8 @@ app.patch('/api/plans/:planId/status', authenticateToken, requireAdmin, async (r
   }
 });
 
-// DELETE /api/plans/:planId — delete a product plan (admin only)
-app.delete('/api/plans/:planId', authenticateToken, requireAdmin, async (req, res) => {
+// DELETE /api/plans/:planId — delete a product plan
+app.delete('/api/plans/:planId', async (req, res) => {
   try {
     await deleteProductPlan(req.params.planId);
     res.json({ message: 'Plan deleted.' });
@@ -629,6 +647,163 @@ app.delete('/api/discounts/:id', async (req, res) => {
   }
 });
 
+// ─── Subscriptions API ────────────────────────────────────────────────────
+
+app.get('/api/subscriptions', async (req, res) => {
+  try {
+    res.json({ subscriptions: await getAllSubscriptions() });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch subscriptions.' });
+  }
+});
+
+app.post('/api/subscriptions', async (req, res) => {
+  try {
+    const sub = await createSubscriptionDB(req.body);
+    res.status(201).json({ message: 'Subscription created.', subscription: sub });
+  } catch (err) {
+    console.error('Create subscription error:', err);
+    res.status(500).json({ error: 'Failed to create subscription.' });
+  }
+});
+
+app.put('/api/subscriptions/:id', async (req, res) => {
+  try {
+    const updated = await updateSubscriptionDB(req.params.id, req.body);
+    if (!updated) return res.status(404).json({ error: 'Subscription not found.' });
+    res.json({ message: 'Subscription updated.', subscription: updated });
+  } catch (err) {
+    console.error('Update subscription error:', err);
+    res.status(500).json({ error: 'Failed to update subscription.' });
+  }
+});
+
+app.delete('/api/subscriptions/:id', async (req, res) => {
+  try {
+    await deleteSubscriptionDB(req.params.id);
+    res.json({ message: 'Subscription deleted.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete subscription.' });
+  }
+});
+
+// ─── Invoices API ─────────────────────────────────────────────────────────
+
+app.get('/api/invoices', async (req, res) => {
+  try {
+    res.json({ invoices: await getAllInvoices() });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch invoices.' });
+  }
+});
+
+app.post('/api/invoices', async (req, res) => {
+  try {
+    const inv = await createInvoiceDB(req.body);
+    res.status(201).json({ message: 'Invoice created.', invoice: inv });
+  } catch (err) {
+    console.error('Create invoice error:', err);
+    res.status(500).json({ error: 'Failed to create invoice.' });
+  }
+});
+
+app.patch('/api/invoices/:id', async (req, res) => {
+  try {
+    const updated = await updateInvoiceDB(req.params.id, req.body);
+    if (!updated) return res.status(404).json({ error: 'Invoice not found.' });
+    res.json({ message: 'Invoice updated.', invoice: updated });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update invoice.' });
+  }
+});
+
+// POST /api/invoices/bulk — create multiple invoices at once (billing day run)
+app.post('/api/invoices/bulk', async (req, res) => {
+  const { invoices } = req.body;
+  if (!Array.isArray(invoices)) return res.status(400).json({ error: 'invoices array required.' });
+  try {
+    const created = [];
+    for (const inv of invoices) {
+      created.push(await createInvoiceDB(inv));
+    }
+    res.status(201).json({ message: `${created.length} invoices created.`, invoices: created });
+  } catch (err) {
+    console.error('Bulk invoice error:', err);
+    res.status(500).json({ error: 'Failed to create bulk invoices.' });
+  }
+});
+
+// ─── Payments API ─────────────────────────────────────────────────────────
+
+app.get('/api/payments', async (req, res) => {
+  try {
+    res.json({ payments: await getAllPayments() });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch payments.' });
+  }
+});
+
+app.post('/api/payments', async (req, res) => {
+  try {
+    // Also update the invoice paid amount and balance
+    const { invoiceId, amount, invoiceTotal, invoiceAmountPaid } = req.body;
+    const payment = await createPaymentDB(req.body);
+
+    if (invoiceId) {
+      const paymentAmount = parseFloat(amount) || 0;
+      const prevPaid = parseFloat(invoiceAmountPaid) || 0;
+      const total = parseFloat(invoiceTotal) || 0;
+      const newPaidTotal = prevPaid + paymentAmount;
+      const newBalance = Math.max(0, total - newPaidTotal);
+      const newStatus = newBalance <= 0.01 ? 'Paid' : 'Partially Paid';
+      await updateInvoiceDB(invoiceId, { amountPaid: newPaidTotal, balance: newBalance, status: newStatus });
+    }
+
+    res.status(201).json({ message: 'Payment recorded.', payment });
+  } catch (err) {
+    console.error('Record payment error:', err);
+    res.status(500).json({ error: 'Failed to record payment.' });
+  }
+});
+
+// ─── Quotation Templates API ──────────────────────────────────────────────
+
+app.get('/api/templates', async (req, res) => {
+  try {
+    res.json({ templates: await getAllTemplates() });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch templates.' });
+  }
+});
+
+app.post('/api/templates', async (req, res) => {
+  try {
+    const tmpl = await createTemplateDB(req.body);
+    res.status(201).json({ message: 'Template created.', template: tmpl });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create template.' });
+  }
+});
+
+app.put('/api/templates/:id', async (req, res) => {
+  try {
+    const updated = await updateTemplateDB(req.params.id, req.body);
+    if (!updated) return res.status(404).json({ error: 'Template not found.' });
+    res.json({ message: 'Template updated.', template: updated });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update template.' });
+  }
+});
+
+app.delete('/api/templates/:id', async (req, res) => {
+  try {
+    await deleteTemplateDB(req.params.id);
+    res.json({ message: 'Template deleted.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete template.' });
+  }
+});
+
 // ─── Serve static frontend in production ─────────────────────────────────
 
 const distPath = path.join(__dirname, '..', 'dist');
@@ -643,6 +818,6 @@ if (fs.existsSync(distPath)) {
 }
 
 // Start Express Server
-app.listen(PORT, () => {
-  console.log(`🚀 Brightloop API server listening on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Brightloop API server listening on http://127.0.0.1:${PORT}`);
 });

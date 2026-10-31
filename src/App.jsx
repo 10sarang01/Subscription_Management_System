@@ -23,6 +23,17 @@ export default function App() {
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
+  // Clear any stale localStorage data cache — all data now lives in brightloop.db
+  useEffect(() => {
+    const staleKeys = [
+      'brightloop_products', 'brightloop_product_plans',
+      'brightloop_subscriptions', 'brightloop_invoices',
+      'brightloop_payments', 'brightloop_discounts',
+      'brightloop_templates'
+    ];
+    staleKeys.forEach(k => localStorage.removeItem(k));
+  }, []);
+
   // Restore session from localStorage or sessionStorage
   useEffect(() => {
     const savedToken = localStorage.getItem('brightloop_token') || sessionStorage.getItem('brightloop_token');
@@ -38,6 +49,7 @@ export default function App() {
     }
     setCheckingAuth(false);
   }, []);
+
 
   const handleLoginSuccess = (user, authToken) => {
     setCurrentUser(user);
