@@ -63,10 +63,7 @@ export default function BillingPage() {
 
   // Due subscriptions preview
   const { due: dueSubscriptions, alreadyBilled } = getDueSubscriptions(billingDate);
-  const expectedBatchTotal = dueSubscriptions.reduce((sum, s) => {
-    const subtotal = s.items?.reduce((st, it) => st + (it.quantity * it.unitPrice), 0) || s.totalAmount || 0;
-    return sum + (subtotal * 1.10); // estimate with 10% tax
-  }, 0);
+  const expectedBatchTotal = dueSubscriptions.reduce((sum, sub) => sum + (Number(sub.totalAmount) || 0), 0);
 
   // Filtered invoices
   const filteredInvoices = invoices.filter((inv) => {
@@ -79,12 +76,9 @@ export default function BillingPage() {
     return matchesStatus && matchesSearch;
   });
 
-  const handleRunBilling = () => {
+  const handleRunBilling = async () => {
     setIsProcessing(true);
-    setTimeout(() => {
-      runBillingDay(billingDate);
-      setIsProcessing(false);
-    }, 400);
+    try { await runBillingDay(billingDate); } finally { setIsProcessing(false); }
   };
 
   const handleOpenPayment = (inv) => {
@@ -245,7 +239,7 @@ export default function BillingPage() {
               </div>
               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                 {dueSubscriptions.length > 0
-                  ? `Estimated gross run: ~$${expectedBatchTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  ? `Estimated from subscription totals; final amount may differ: ~₹${expectedBatchTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   : `${alreadyBilled.length} contracts previously billed in this cycle.`}
               </div>
 
@@ -295,7 +289,7 @@ export default function BillingPage() {
             <span>Total Invoiced</span>
             <CreditCard size={18} style={{ color: 'var(--primary)' }} />
           </div>
-          <div className="metric-value">${totalBilled.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+          <div className="metric-value">₹{totalBilled.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           <div className="metric-trend" style={{ color: 'var(--text-muted)' }}>
             <span>{invoices.filter(i => i.status !== 'Cancelled').length} active invoices generated</span>
           </div>
@@ -306,7 +300,7 @@ export default function BillingPage() {
             <span>Paid Revenue</span>
             <CheckCircle size={18} style={{ color: 'var(--success)' }} />
           </div>
-          <div className="metric-value">${totalCollected.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+          <div className="metric-value">₹{totalCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           <div className="metric-trend" style={{ color: 'var(--success)' }}>
             <span>Settled & cleared collections</span>
           </div>
@@ -317,7 +311,7 @@ export default function BillingPage() {
             <span>Pending Receivables</span>
             <Clock size={18} style={{ color: '#d97706' }} />
           </div>
-          <div className="metric-value">${totalPending.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+          <div className="metric-value">₹{totalPending.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           <div className="metric-trend" style={{ color: '#d97706' }}>
             <span>Outstanding customer balances</span>
           </div>
@@ -355,11 +349,12 @@ export default function BillingPage() {
           </div>
 
           {/* Status Tabs */}
-          <div className="neu-tabs" style={{ maxWidth: '640px' }}>
+          <div className="neu-tabs" style={{ maxWidth: '100%', flexWrap: 'wrap' }}>
             {[
               { id: 'ALL', label: 'All', count: invoices.length },
               { id: 'DRAFT', label: 'Draft', count: invoices.filter(i => i.status === 'Draft').length },
               { id: 'CONFIRMED', label: 'Confirmed', count: invoices.filter(i => i.status === 'Confirmed').length },
+              { id: 'PARTIALLY PAID', label: 'Partially paid', count: invoices.filter(i => i.status === 'Partially Paid').length },
               { id: 'PAID', label: 'Paid', count: invoices.filter(i => i.status === 'Paid').length },
               { id: 'OVERDUE', label: 'Overdue', count: invoices.filter(i => i.status === 'Overdue').length },
               { id: 'CANCELLED', label: 'Cancelled', count: invoices.filter(i => i.status === 'Cancelled').length }
@@ -441,23 +436,23 @@ export default function BillingPage() {
                       )}
                     </td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      <div>Tax: +${(inv.taxTotal || 0).toFixed(2)}</div>
+                      <div>Tax: +₹{(inv.taxTotal || 0).toFixed(2)}</div>
                       {inv.discountAmount > 0 && (
                         <div style={{ color: 'var(--success)', fontWeight: 600 }}>
-                          Disc: -${inv.discountAmount.toFixed(2)}
+                          Disc: -₹{inv.discountAmount.toFixed(2)}
                         </div>
                       )}
                     </td>
                     <td>
-                      <div style={{ fontWeight: 800, fontSize: '0.96rem' }}>${inv.total.toFixed(2)}</div>
+                      <div style={{ fontWeight: 800, fontSize: '0.96rem' }}>₹{inv.total.toFixed(2)}</div>
                       {inv.balance > 0 && inv.status !== 'Draft' && inv.status !== 'Cancelled' && (
                         <span style={{ fontSize: '0.74rem', color: 'var(--error)', fontWeight: 600 }}>
-                          Bal: ${inv.balance.toFixed(2)}
+                          Bal: ₹{inv.balance.toFixed(2)}
                         </span>
                       )}
                       {inv.amountPaid > 0 && (
                         <div style={{ fontSize: '0.72rem', color: '#16a34a' }}>
-                          Paid: ${inv.amountPaid.toFixed(2)}
+                          Paid: ₹{inv.amountPaid.toFixed(2)}
                         </div>
                       )}
                     </td>
@@ -536,7 +531,7 @@ export default function BillingPage() {
                         )}
 
                         {/* Cancel Invoice Action (Scene 4: "The team can confirm, cancel, send or print") */}
-                        {inv.status !== 'Paid' && inv.status !== 'Cancelled' && (
+                        {inv.status !== 'Paid' && inv.status !== 'Cancelled' && !(inv.amountPaid > 0) && (
                           <button
                             onClick={() => cancelInvoice(inv.id)}
                             className="neu-btn"
@@ -595,7 +590,7 @@ export default function BillingPage() {
 
                 {selectedInvoice.balance > 0 && selectedInvoice.status !== 'Draft' && selectedInvoice.status !== 'Cancelled' && (
                   <button
-                    onClick={() => setShowPaymentModal(true)}
+                    onClick={() => handleOpenPayment(selectedInvoice)}
                     className="neu-btn"
                     style={{ padding: '8px 16px', fontSize: '0.84rem', color: 'var(--success)' }}
                   >
@@ -603,7 +598,7 @@ export default function BillingPage() {
                   </button>
                 )}
 
-                {selectedInvoice.status !== 'Paid' && selectedInvoice.status !== 'Cancelled' && (
+                {selectedInvoice.status !== 'Paid' && selectedInvoice.status !== 'Cancelled' && !(selectedInvoice.amountPaid > 0) && (
                   <button
                     onClick={async () => { if (await cancelInvoice(selectedInvoice.id)) setSelectedInvoice(null); }}
                     className="neu-btn"
@@ -672,7 +667,7 @@ export default function BillingPage() {
                     </div>
                   )}
                   <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Payment Terms: <strong>Net 15 Days</strong>
+                    Payment due: <strong>{selectedInvoice.dueDate}</strong>
                   </div>
                 </div>
               </div>
@@ -693,11 +688,11 @@ export default function BillingPage() {
                     <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)', fontSize: '0.88rem' }}>
                       <td style={{ padding: '12px 8px', fontWeight: 600, color: 'var(--text-main)' }}>{item.name}</td>
                       <td style={{ padding: '12px 8px', textAlign: 'center', color: 'var(--text-muted)' }}>{item.quantity}</td>
-                      <td style={{ padding: '12px 8px', textAlign: 'right', color: 'var(--text-muted)' }}>${item.unitPrice.toFixed(2)}</td>
+                      <td style={{ padding: '12px 8px', textAlign: 'right', color: 'var(--text-muted)' }}>₹{item.unitPrice.toFixed(2)}</td>
                       <td style={{ padding: '12px 8px', textAlign: 'right', color: 'var(--text-dim)', fontSize: '0.82rem' }}>
-                        {item.taxRate ? `${(item.taxRate * 100).toFixed(0)}% VAT` : '10% VAT'}
+                        {item.taxRate == null ? '—' : `${(item.taxRate * 100).toFixed(2).replace(/\.?0+$/, '')}%`}
                       </td>
-                      <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--text-main)' }}>${item.total.toFixed(2)}</td>
+                      <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--text-main)' }}>₹{item.total.toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -708,32 +703,32 @@ export default function BillingPage() {
                 <div style={{ width: '300px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.9rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
                     <span>Subtotal:</span>
-                    <span>${selectedInvoice.subtotal.toFixed(2)}</span>
+                    <span>₹{selectedInvoice.subtotal.toFixed(2)}</span>
                   </div>
 
                   {selectedInvoice.discountAmount > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--success)', fontWeight: 600 }}>
                       <span>Discount {selectedInvoice.discountCode ? `(${selectedInvoice.discountCode})` : ''}:</span>
-                      <span>-${selectedInvoice.discountAmount.toFixed(2)}</span>
+                      <span>-₹{selectedInvoice.discountAmount.toFixed(2)}</span>
                     </div>
                   )}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
                     <span>Automated Taxes:</span>
-                    <span>+${(selectedInvoice.taxTotal || 0).toFixed(2)}</span>
+                    <span>+₹{(selectedInvoice.taxTotal || 0).toFixed(2)}</span>
                   </div>
 
                   <div style={{ height: '1px', background: 'var(--border-color)', margin: '4px 0' }} />
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>
                     <span>Total Amount:</span>
-                    <span>${selectedInvoice.total.toFixed(2)}</span>
+                    <span>₹{selectedInvoice.total.toFixed(2)}</span>
                   </div>
 
                   {selectedInvoice.amountPaid > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--success)', fontWeight: 700 }}>
                       <span>Amount Paid:</span>
-                      <span>${selectedInvoice.amountPaid.toFixed(2)}</span>
+                      <span>₹{selectedInvoice.amountPaid.toFixed(2)}</span>
                     </div>
                   )}
 
@@ -749,7 +744,7 @@ export default function BillingPage() {
                     marginTop: '4px'
                   }}>
                     <span>Balance Due:</span>
-                    <span>${selectedInvoice.balance.toFixed(2)}</span>
+                    <span>₹{selectedInvoice.balance.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -779,7 +774,7 @@ export default function BillingPage() {
             <form onSubmit={handleRecordPaymentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
-                  Payment Amount ($)
+                  Payment Amount (₹)
                 </label>
                 <input
                   type="number"
@@ -790,7 +785,7 @@ export default function BillingPage() {
                   className="neu-inset neu-input"
                 />
                 <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                  Current Outstanding Balance: ${selectedInvoice.balance.toFixed(2)}
+                  Current Outstanding Balance: ₹{selectedInvoice.balance.toFixed(2)}
                 </span>
               </div>
 

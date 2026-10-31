@@ -520,31 +520,9 @@ export function SubscriptionProvider({ children, initialUser }) {
   };
 
   // Inspection helper: returns subscriptions that are due vs already billed
-  const getDueSubscriptions = (targetDateStr = new Date().toISOString().split('T')[0]) => {
-    const activeSubs = subscriptions.filter((s) => s.status === 'Active');
-    const due = [];
-    const alreadyBilled = [];
-
-    activeSubs.forEach((sub) => {
-      const isAlreadyInvoiced = invoices.some((inv) => {
-        if (inv.subscriptionNumber !== sub.subNumber || inv.status === 'Cancelled') return false;
-        if (inv.issueDate === targetDateStr) return true;
-        if (sub.billingFrequency === 'monthly' && inv.issueDate?.slice(0, 7) === targetDateStr.slice(0, 7)) return true;
-        if (sub.billingFrequency === 'yearly' && inv.issueDate?.slice(0, 4) === targetDateStr.slice(0, 4)) return true;
-        return false;
-      });
-
-      if (isAlreadyInvoiced) {
-        alreadyBilled.push(sub);
-      } else {
-        const isDateDue = !sub.nextBillingDate || sub.nextBillingDate <= targetDateStr;
-        if (isDateDue) {
-          due.push(sub);
-        }
-      }
-    });
-
-    return { due, alreadyBilled };
+  const getDueSubscriptions = (targetDateStr = getLocalDateString()) => {
+    const active = subscriptions.filter((sub) => sub.status === 'Active');
+    return { due: active.filter((sub) => sub.nextBillingDate && sub.nextBillingDate <= targetDateStr && (!sub.expiryDate || sub.nextBillingDate <= sub.expiryDate) && (!sub.lastBillingDate || sub.lastBillingDate < targetDateStr)), alreadyBilled: active.filter((sub) => sub.lastBillingDate === targetDateStr) };
   };
 
   // Universal Discount Validator: Scene 5
@@ -624,9 +602,13 @@ export function SubscriptionProvider({ children, initialUser }) {
   };
 
   // Billing Day Engine: Scene 4 & Scene 5
-  const runBillingDay = () => {
-    showToast('Billing runs are unavailable until subscriptions are connected to the database.', 'error');
-    return null;
+  const runBillingDay = async (date = getLocalDateString()) => {
+    try {
+      const result = await billingRequest('/api/billing/run', { method: 'POST', body: JSON.stringify({ date }) });
+      const [billingRefreshed] = await Promise.all([refreshBilling(), refreshSubscriptions()]);
+      showToast(billingRefreshed ? `Billing complete: ${result.generatedCount} invoice(s) created.` : 'Billing completed, but the invoice list could not be refreshed.', billingRefreshed ? 'success' : 'error');
+      return result;
+    } catch (err) { showToast(err.message || 'Billing run failed.', 'error'); return null; }
   };
 
   const updateInvoiceStatus = async (id, action) => {

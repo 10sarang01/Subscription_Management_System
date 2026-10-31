@@ -48,7 +48,7 @@ export default function CustomerPortalPage() {
     setActiveAddons((prev) => ({ ...prev, [prodId]: newState }));
     showToast(
       newState
-        ? `Added ${prodName} (+$${price}/mo) to next billing cycle!`
+        ? `Added ${prodName} (+₹${price}/mo) to next billing cycle!`
         : `Removed ${prodName} from future billing cycles.`,
       newState ? 'success' : 'info'
     );
@@ -105,7 +105,7 @@ export default function CustomerPortalPage() {
 
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--primary)' }}>
-                ${activeSub.totalAmount.toFixed(2)}
+                ₹{activeSub.totalAmount.toFixed(2)}
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>/{activeSub.billingFrequency}</span>
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -128,7 +128,7 @@ export default function CustomerPortalPage() {
                       Edition: {item.variant || 'Standard'} • Quantity: {item.quantity} seat(s)
                     </div>
                   </div>
-                  <div style={{ fontWeight: 800 }}>${(item.quantity * item.unitPrice).toFixed(2)}</div>
+                  <div style={{ fontWeight: 800 }}>₹{(item.quantity * item.unitPrice).toFixed(2)}</div>
                 </div>
               ))}
             </div>
@@ -150,7 +150,7 @@ export default function CustomerPortalPage() {
               <div className="neu-flat-sm" style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>Advanced Analytics & AI Forecasting</div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>+$95.00 / month</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>+₹95.00 / month</div>
                 </div>
                 <button
                   onClick={() => toggleAddon('prod-2', 'Analytics AI Forecasting', 95)}
@@ -169,7 +169,7 @@ export default function CustomerPortalPage() {
               <div className="neu-flat-sm" style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>High-Performance Cloud Database Storage</div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>+$65.00 / month</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>+₹65.00 / month</div>
                 </div>
                 <button
                   onClick={() => toggleAddon('prod-3', 'Cloud Database Storage', 65)}
@@ -223,9 +223,9 @@ export default function CustomerPortalPage() {
                   </td>
                   <td style={{ fontSize: '0.84rem' }}>{inv.issueDate}</td>
                   <td style={{ fontSize: '0.84rem' }}>{inv.dueDate}</td>
-                  <td style={{ fontWeight: 700 }}>${inv.total.toFixed(2)}</td>
+                  <td style={{ fontWeight: 700 }}>₹{inv.total.toFixed(2)}</td>
                   <td style={{ fontWeight: 800, color: inv.balance > 0 ? 'var(--error)' : 'var(--success)' }}>
-                    ${inv.balance.toFixed(2)}
+                    ₹{inv.balance.toFixed(2)}
                   </td>
                   <td>
                     <span className={`status-pill status-${inv.status.toLowerCase().replace(' ', '-')}`}>
@@ -239,7 +239,7 @@ export default function CustomerPortalPage() {
                         className="neu-btn-primary"
                         style={{ padding: '6px 14px', fontSize: '0.78rem' }}
                       >
-                        <CreditCard size={14} /> Pay Now (${inv.balance.toFixed(2)})
+                        <CreditCard size={14} /> Pay Now (₹{inv.balance.toFixed(2)})
                       </button>
                     ) : (
                       <button

@@ -99,7 +99,7 @@ export default function DiscountsPage() {
     eligibilityMessage = `Minimum requirement not met: Requires at least ${selectedRule.minQuantity} seats (current: ${numericSeats}). Add ${selectedRule.minQuantity - numericSeats} more seats to qualify!`;
   } else if (subtotalBeforeDiscount < selectedRule.minAmount) {
     isEligible = false;
-    eligibilityMessage = `Minimum spend not met: Requires at least $${selectedRule.minAmount} (current: $${subtotalBeforeDiscount.toFixed(2)}).`;
+    eligibilityMessage = `Minimum spend not met: Requires at least ₹${selectedRule.minAmount} (current: ₹${subtotalBeforeDiscount.toFixed(2)}).`;
   } else {
     if (selectedRule.type === 'percentage') {
       simulatedDeduction = (subtotalBeforeDiscount * selectedRule.value) / 100;
@@ -172,7 +172,7 @@ export default function DiscountsPage() {
               >
                 {discounts.map((d) => (
                   <option key={d.id} value={d.code}>
-                    {d.code} — {d.name} ({d.type === 'percentage' ? `${d.value}%` : `$${d.value}`} off)
+                    {d.code} — {d.name} ({d.type === 'percentage' ? `${d.value}%` : `₹${d.value}`} off)
                   </option>
                 ))}
               </select>
@@ -197,7 +197,7 @@ export default function DiscountsPage() {
               </div>
               <div>
                 <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                  Base Price per Seat ($)
+                  Base Price per Seat (₹)
                 </label>
                 <input
                   type="number"
@@ -215,20 +215,20 @@ export default function DiscountsPage() {
             {/* Simulation Results Card */}
             <div className="neu-inset-sm" style={{ padding: '16px', marginTop: '6px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.86rem', color: 'var(--text-muted)' }}>
-                <span>Subtotal ({numericSeats} seats @ ${numericBasePrice}):</span>
-                <strong>${subtotalBeforeDiscount.toFixed(2)}</strong>
+                <span>Subtotal ({numericSeats} seats @ ₹{numericBasePrice}):</span>
+                <strong>₹{subtotalBeforeDiscount.toFixed(2)}</strong>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.86rem', marginTop: '6px', color: isEligible ? 'var(--success)' : 'var(--error)' }}>
                 <span>Discount Deduction:</span>
-                <strong>{isEligible ? `-$${simulatedDeduction.toFixed(2)}` : '$0.00'}</strong>
+                <strong>{isEligible ? `-₹${simulatedDeduction.toFixed(2)}` : '₹0.00'}</strong>
               </div>
 
               <div style={{ height: '1px', background: 'rgba(184, 194, 204, 0.4)', margin: '10px 0' }} />
 
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)' }}>
                 <span>Simulated Invoice Total:</span>
-                <span>${simulatedFinalTotal.toFixed(2)}</span>
+                <span>₹{simulatedFinalTotal.toFixed(2)}</span>
               </div>
 
               <div style={{ marginTop: '10px', fontSize: '0.78rem', color: isEligible ? '#15803d' : '#b91c1c', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -255,7 +255,7 @@ export default function DiscountsPage() {
                     cursor: 'pointer'
                   }}
                 >
-                  <Sparkles size={16} /> ⚡ Unlock: Bump to {selectedRule.minQuantity} Seats ({selectedRule.type === 'percentage' ? `${selectedRule.value}% off` : `$${selectedRule.value} off`})
+                  <Sparkles size={16} /> ⚡ Unlock: Bump to {selectedRule.minQuantity} Seats ({selectedRule.type === 'percentage' ? `${selectedRule.value}% off` : `₹${selectedRule.value} off`})
                 </button>
               )}
             </div>
@@ -338,7 +338,7 @@ export default function DiscountsPage() {
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{d.name}</div>
                     </td>
                     <td style={{ fontWeight: 800, fontSize: '1rem' }}>
-                      {d.type === 'percentage' ? `${d.value}% Off` : `$${d.value}.00 Off`}
+                      {d.type === 'percentage' ? `${d.value}% Off` : `₹${d.value}.00 Off`}
                     </td>
                     <td style={{ fontSize: '0.82rem' }}>
                       <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>
@@ -352,7 +352,7 @@ export default function DiscountsPage() {
                     </td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                       <div>Min Seats: <strong>{d.minQuantity}</strong></div>
-                      {d.minAmount > 0 && <div>Min Spend: <strong>${d.minAmount}</strong></div>}
+                      {d.minAmount > 0 && <div>Min Spend: <strong>₹{d.minAmount}</strong></div>}
                     </td>
                     <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                       <div>{d.startDate}</div>
@@ -481,12 +481,12 @@ export default function DiscountsPage() {
                     className="neu-inset neu-input"
                   >
                     <option value="percentage">Percentage (%)</option>
-                    <option value="fixed">Fixed Amount ($)</option>
+                    <option value="fixed">Fixed Amount (₹)</option>
                   </select>
                 </div>
                 <div>
                   <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
-                    Value ({discountForm.type === 'percentage' ? '%' : '$'})
+                    Value ({discountForm.type === 'percentage' ? '%' : '₹'})
                   </label>
                   <input
                     type="number"
@@ -524,7 +524,7 @@ export default function DiscountsPage() {
                   >
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} (${p.salesPrice})
+                        {p.name} (₹{p.salesPrice})
                       </option>
                     ))}
                   </select>
@@ -547,7 +547,7 @@ export default function DiscountsPage() {
                 </div>
                 <div>
                   <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
-                    Min Purchase ($)
+                    Min Purchase (₹)
                   </label>
                   <input
                     type="number"

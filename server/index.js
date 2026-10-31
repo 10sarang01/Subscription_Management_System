@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { getInvoices, getPayments, transitionInvoice } = require('./invoices');
 const { recordPayment, PaymentError } = require('./payments');
+const { runBilling, BillingError } = require('./billing');
 const {
   db,
   initDatabase,
@@ -537,6 +538,11 @@ app.delete('/api/plans/:planId', authenticateToken, requireAdmin, async (req, re
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete plan.' });
   }
+});
+
+app.post('/api/billing/run', authenticateToken, async (req, res) => {
+  try { res.json(await runBilling(db, req.body.date, req.user)); }
+  catch (err) { if (err instanceof BillingError) return res.status(err.status).json({ error: err.message }); console.error('Billing run error:', err); res.status(500).json({ error: 'Billing run failed; no invoices were created.' }); }
 });
 
 // Customers may read only their own invoices.
