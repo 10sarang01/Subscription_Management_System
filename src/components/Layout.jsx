@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
 import { defaultPersonas } from '../data/mockData';
+import ThemeToggle from './ThemeToggle';
 
 export default function Layout({ onLogout }) {
   const {
@@ -44,42 +45,42 @@ export default function Layout({ onLogout }) {
       case '/':
       case '/dashboard':
         return {
-          title: 'Executive & Finance Dashboard',
-          subtitle: 'Scene 7: Real-time MRR, ARR, active subscriptions, receivables & overdue aging'
+          title: 'Overview',
+          subtitle: 'Your subscription business at a glance'
         };
       case '/products':
         return {
-          title: 'Products, Variants & Plans Catalog',
+          title: 'Products & plans',
           subtitle: 'Scene 2: Configure recurring software plans, variant pricing & lifecycle rules'
         };
       case '/quotes':
         return {
-          title: 'Quotations & Subscriptions Lifecycle',
+          title: 'Subscriptions & quotes',
           subtitle: 'Scene 3: Templates, quote progression (Draft ➔ Quotation ➔ Confirmed ➔ Active ➔ Closed)'
         };
       case '/billing':
         return {
-          title: 'Recurring Invoicing & Billing Day Engine',
+          title: 'Invoices & billing',
           subtitle: 'Scene 4: Automated invoice generation, tax calculation rules & double-billing prevention'
         };
       case '/discounts':
         return {
-          title: 'Discount Rules & Coupons Engine',
+          title: 'Discounts & rules',
           subtitle: 'Scene 5: Admin-restricted discounts, percentage/fixed amounts & usage tracking'
         };
       case '/payments':
         return {
-          title: 'Payments & Collections Ledger',
+          title: 'Payments & collections',
           subtitle: 'Scene 6: Multi-method transaction reconciliation & overdue invoice recovery'
         };
       case '/portal':
         return {
-          title: 'Customer Self-Service Portal',
+          title: 'Customer portal',
           subtitle: 'Scene 1: Customer view for managing subscriptions, add-ons & instant invoice payments'
         };
       case '/team':
         return {
-          title: 'User Access & Staff Administration',
+          title: 'Team & access',
           subtitle: 'Scene 1: Role-based permissions, SQLite database integration & admin staff onboarding'
         };
       default:
@@ -109,7 +110,7 @@ export default function Layout({ onLogout }) {
                 justifyContent: 'center',
                 color: 'var(--primary)',
                 borderRadius: '12px',
-                background: 'linear-gradient(135deg, #e2e8f0, #cbd5e1)'
+                background: 'var(--brand-logo-bg)'
               }}
             >
               <Layers size={22} />
@@ -120,7 +121,7 @@ export default function Layout({ onLogout }) {
                   fontSize: '1.18rem',
                   fontWeight: 800,
                   letterSpacing: '-0.02em',
-                  color: '#1e293b'
+                  color: 'var(--text-main)'
                 }}
               >
                 Brightloop <span style={{ color: 'var(--primary)' }}>Systems</span>
@@ -140,7 +141,8 @@ export default function Layout({ onLogout }) {
           </div>
 
           {/* Navigation Links */}
-          <nav className="sidebar-nav">
+          <nav className="sidebar-nav" aria-label="Main navigation">
+            <div className="sidebar-section-label">WORKSPACE</div>
             <NavLink
               to="/"
               className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
@@ -198,13 +200,7 @@ export default function Layout({ onLogout }) {
               <span>Payments & Aging</span>
             </NavLink>
 
-            <div
-              style={{
-                height: '1px',
-                background: 'rgba(184, 194, 204, 0.3)',
-                margin: '10px 0'
-              }}
-            />
+            <div className="sidebar-section-label">MANAGE</div>
 
             <NavLink
               to="/portal"
@@ -219,7 +215,7 @@ export default function Layout({ onLogout }) {
               className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
             >
               <Users size={18} />
-              <span>Team & SQLite DB</span>
+              <span>Team & Access</span>
             </NavLink>
           </nav>
         </div>
@@ -307,6 +303,9 @@ export default function Layout({ onLogout }) {
 
           {/* Right Header Actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+            {/* Theme Toggle Button */}
+            <ThemeToggle />
+
             {/* Quick Billing Day Batch Automation Trigger */}
             <button
               onClick={() => runBillingDay()}
@@ -315,20 +314,20 @@ export default function Layout({ onLogout }) {
               title="Simulate Scene 4: Automated recurring billing day run"
             >
               <Zap size={15} />
-              ⚡ Run Billing Day
+              Run Billing Day
             </button>
           </div>
         </header>
 
         {/* Content Body */}
-        <main className="app-content animate-fade-in">
+        <main key={location.pathname} className="app-content animate-fade-in">
           <Outlet />
         </main>
       </div>
 
       {/* Global Floating Toast */}
       {toast && (
-        <div className={`toast-container toast-${toast.type}`}>
+        <div className={`toast-container toast-${toast.type}`} role={toast.type === 'error' ? 'alert' : 'status'}>
           {toast.type === 'success' && <CheckCircle2 size={18} />}
           {toast.type === 'error' && <AlertCircle size={18} />}
           {toast.type === 'info' && <Info size={18} />}

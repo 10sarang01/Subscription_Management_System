@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
@@ -28,7 +28,6 @@ export default function OverviewPage() {
   } = useSubscription();
 
   const navigate = useNavigate();
-  const [periodFilter, setPeriodFilter] = useState('month'); // 'month' | 'quarter' | 'year'
 
   // Calculations for Scene 7
   const activeSubs = subscriptions.filter((s) => s.status === 'Active');
@@ -66,40 +65,20 @@ export default function OverviewPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
       
       {/* Top Banner: Finance Lead Quick Summary */}
-      <div className="neu-flat" style={{ padding: '24px 30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+      <div className="neu-flat overview-intro" style={{ padding: '24px 30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <span style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Scene 7: Finance & Executive Monthly Close
+            YOUR BUSINESS AT A GLANCE
           </span>
           <h2 style={{ fontSize: '1.45rem', fontWeight: 800, marginTop: '4px', color: 'var(--text-main)' }}>
-            Recurring Revenue & Health Summary
+            Revenue overview
           </h2>
           <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Instant consolidated view answering: How many active subscriptions? Revenue collected? Receivables owed? Overdue accounts?
+            Keep track of recurring revenue, subscriptions, and outstanding payments.
           </p>
         </div>
 
-        {/* Period Filter Tabs */}
-        <div className="neu-tabs" style={{ maxWidth: '320px' }}>
-          <button
-            className={`neu-tab ${periodFilter === 'month' ? 'active' : ''}`}
-            onClick={() => setPeriodFilter('month')}
-          >
-            This Month
-          </button>
-          <button
-            className={`neu-tab ${periodFilter === 'quarter' ? 'active' : ''}`}
-            onClick={() => setPeriodFilter('quarter')}
-          >
-            Quarter
-          </button>
-          <button
-            className={`neu-tab ${periodFilter === 'year' ? 'active' : ''}`}
-            onClick={() => setPeriodFilter('year')}
-          >
-            Full Year
-          </button>
-        </div>
+
       </div>
 
       {/* KPI Metrics Grid */}
@@ -107,7 +86,7 @@ export default function OverviewPage() {
         {/* MRR Card */}
         <div className="neu-flat metric-card">
           <div className="metric-header">
-            <span>Monthly Recurring Revenue (MRR)</span>
+            <span>Monthly recurring revenue</span>
             <div className="neu-flat-sm" style={{ width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
               <TrendingUp size={18} />
             </div>
@@ -172,7 +151,7 @@ export default function OverviewPage() {
         {/* Overdue Alert Card */}
         <div className="neu-flat metric-card" style={{ borderLeft: '4px solid var(--error)' }}>
           <div className="metric-header">
-            <span>Overdue At Risk</span>
+            <span>Overdue balance</span>
             <div className="neu-flat-sm" style={{ width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--error)' }}>
               <AlertTriangle size={18} />
             </div>
@@ -188,10 +167,10 @@ export default function OverviewPage() {
 
       {/* Subscription Lifecycle Funnel: Scene 3 Requirement */}
       <div className="neu-flat" style={{ padding: '28px 30px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div className="section-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <div>
             <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              Subscription Lifecycle Stages
+              Subscription lifecycle
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '2px' }}>
               Progress contracts seamlessly from quotation preparation to active recurring billing
@@ -240,7 +219,7 @@ export default function OverviewPage() {
       </div>
 
       {/* Two Column Section: Overdue Invoices Aging & Quick Action Hub */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: '24px' }}>
         
         {/* Overdue Collections Widget (Scene 6) */}
         <div className="neu-flat" style={{ padding: '26px' }}>
@@ -248,7 +227,7 @@ export default function OverviewPage() {
             <div>
               <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <AlertTriangle size={18} style={{ color: 'var(--error)' }} />
-                Overdue Aging & Dunning
+                Overdue invoices
               </h3>
               <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                 Chase overdue accounts before they turn into lost revenue
@@ -307,10 +286,10 @@ export default function OverviewPage() {
           <div>
             <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Zap size={18} style={{ color: 'var(--primary)' }} />
-              Quick Operational Workflows
+              Quick actions
             </h3>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px', marginBottom: '18px' }}>
-              Jump straight into common billing month scenarios
+              Get started with common tasks
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>

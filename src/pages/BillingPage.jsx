@@ -123,32 +123,32 @@ export default function BillingPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '26px' }}>
       
       {/* Hero Banner: Automated Billing Day Engine (Scene 4) */}
-      <div className="neu-flat" style={{
+      <div className="neu-flat billing-hero" style={{
         padding: '28px 32px',
-        background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.08) 0%, rgba(248, 250, 252, 0.95) 100%)',
-        border: '1px solid rgba(79, 70, 229, 0.15)'
+        background: 'var(--billing-hero-bg)',
+        border: '1px solid var(--border-color)'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '24px' }}>
           
           <div style={{ maxWidth: '640px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Scene 4: Billing Day Engine
+                BILLING WORKSPACE
               </span>
               <span style={{ fontSize: '0.72rem', background: '#e0e7ff', color: '#4338ca', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
-                High-Volume Recurring Automation
+                AUTOMATED
               </span>
             </div>
 
-            <h2 style={{ fontSize: '1.65rem', fontWeight: 800, marginTop: '6px', color: '#0f172a', letterSpacing: '-0.02em' }}>
-              Automated Recurring Invoicing & Billing Run
+            <h2 style={{ fontSize: '1.65rem', fontWeight: 800, marginTop: '6px', color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
+              Billing, on autopilot.
             </h2>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.55 }}>
-              Hundreds of subscriptions due at once? No manual data entry. Invoices are automatically generated with customer details, product lines, tax calculations, and discount rules applied in one execution.
+              Turn due subscriptions into accurate invoices in one effortless run. Taxes, discounts, and billing cycles are taken care of.
             </p>
 
             {/* Badges / Guarantees */}
-            <div style={{ display: 'flex', gap: '18px', marginTop: '16px', fontSize: '0.82rem', color: '#334155', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '18px', marginTop: '16px', fontSize: '0.82rem', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
                 <ShieldCheck size={17} color="#16a34a" /> Double-Billing Prevented
               </span>
@@ -165,18 +165,18 @@ export default function BillingPage() {
           </div>
 
           {/* Interactive Billing Day Trigger Panel */}
-          <div className="neu-flat-sm" style={{
+          <div className="neu-flat-sm billing-control" style={{
             padding: '20px 24px',
-            backgroundColor: '#ffffff',
+            backgroundColor: 'var(--bg-color)',
             borderRadius: '16px',
-            minWidth: '320px',
+            width: 'min(100%, 360px)', minWidth: 0,
             display: 'flex',
             flexDirection: 'column',
             gap: '14px',
-            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01)'
+            boxShadow: '5px 5px 12px var(--shadow-dark), -5px -5px 12px var(--shadow-light)'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Billing Cut-Off Date
               </label>
               <span style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 600 }}>
@@ -195,8 +195,8 @@ export default function BillingPage() {
                   padding: '9px 12px',
                   fontSize: '0.9rem',
                   fontWeight: 600,
-                  color: '#0f172a',
-                  border: '1px solid #cbd5e1'
+                  color: 'var(--text-main)',
+                  border: '1px solid var(--border-color)'
                 }}
               />
               <button
@@ -214,14 +214,14 @@ export default function BillingPage() {
             <div style={{
               padding: '10px 14px',
               borderRadius: '10px',
-              backgroundColor: dueSubscriptions.length > 0 ? '#eff6ff' : '#f8fafc',
-              border: dueSubscriptions.length > 0 ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
+              backgroundColor: dueSubscriptions.length > 0 ? 'var(--info-bg)' : 'var(--bg-subtle)',
+              border: dueSubscriptions.length > 0 ? '1px solid var(--info-border)' : '1px solid var(--border-color)',
               display: 'flex',
               flexDirection: 'column',
               gap: '4px'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.84rem', fontWeight: 700, color: dueSubscriptions.length > 0 ? '#1e40af' : '#64748b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <span style={{ fontSize: '0.84rem', fontWeight: 700, color: dueSubscriptions.length > 0 ? 'var(--info-text)' : 'var(--text-muted)' }}>
                   {dueSubscriptions.length > 0
                     ? `⚡ ${dueSubscriptions.length} Subscription${dueSubscriptions.length > 1 ? 's' : ''} Ready to Bill`
                     : '✅ All Subscriptions Up-To-Date'}
@@ -229,13 +229,13 @@ export default function BillingPage() {
                 {dueSubscriptions.length > 0 && (
                   <button
                     onClick={() => setShowDueList(!showDueList)}
-                    style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}
+                    style={{ background: 'none', border: 'none', color: 'var(--info-text)', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}
                   >
                     {showDueList ? 'Hide details' : 'View list'}
                   </button>
                 )}
               </div>
-              <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                 {dueSubscriptions.length > 0
                   ? `Estimated gross run: ~$${expectedBatchTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   : `${alreadyBilled.length} contracts previously billed in this cycle.`}
@@ -245,9 +245,9 @@ export default function BillingPage() {
               {showDueList && dueSubscriptions.length > 0 && (
                 <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #dbeafe', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {dueSubscriptions.map((s) => (
-                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: '#1e3a8a' }}>
+                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-main)' }}>
                       <span style={{ fontWeight: 600 }}>{s.customerName} ({s.subNumber})</span>
-                      <span style={{ color: '#475569' }}>Due: {s.nextBillingDate || 'Today'}</span>
+                      <span style={{ color: 'var(--text-muted)' }}>Due: {s.nextBillingDate || 'Today'}</span>
                     </div>
                   ))}
                 </div>
@@ -272,7 +272,7 @@ export default function BillingPage() {
               {isProcessing
                 ? 'Processing Batch Invoices...'
                 : dueSubscriptions.length > 0
-                ? `⚡ Run Billing Day Batch (${dueSubscriptions.length})`
+                ? `Run Billing Day Batch (${dueSubscriptions.length})`
                 : 'No Contracts Due'}
             </button>
           </div>
@@ -552,10 +552,10 @@ export default function BillingPage() {
       {/* Invoice Printable Preview Modal (Scene 4: Print/PDF) */}
       {selectedInvoice && !showPaymentModal && (
         <div className="modal-overlay" onClick={() => setSelectedInvoice(null)}>
-          <div className="modal-card animate-fade-in" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '780px', background: '#ffffff', color: '#1e293b' }}>
+          <div className="modal-card animate-fade-in" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '780px', background: 'var(--bg-surface)', color: 'var(--text-main)', border: '1px solid var(--border-color)' }}>
             
             {/* Modal Actions Top Bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px', marginBottom: '24px' }}>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => window.print()}
@@ -626,10 +626,10 @@ export default function BillingPage() {
               {/* Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px' }}>
                 <div>
-                  <h2 style={{ fontSize: '1.75rem', fontWeight: 900, color: '#4f46e5', letterSpacing: '-0.02em' }}>
-                    BRIGHTLOOP <span style={{ color: '#0f172a' }}>SYSTEMS</span>
+                  <h2 style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--primary)', letterSpacing: '-0.02em' }}>
+                    BRIGHTLOOP <span style={{ color: 'var(--text-main)' }}>SYSTEMS</span>
                   </h2>
-                  <p style={{ fontSize: '0.84rem', color: '#64748b', marginTop: '4px', lineHeight: 1.5 }}>
+                  <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.5 }}>
                     Enterprise Subscription & Cloud Platform Inc.<br />
                     100 Tech Boulevard, Suite 400 • billing@brightloop.com<br />
                     Tax ID / VAT: US-99238471
@@ -637,10 +637,10 @@ export default function BillingPage() {
                 </div>
 
                 <div style={{ textAlign: 'right' }}>
-                  <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: '#0f172a', letterSpacing: '0.04em' }}>
+                  <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--text-main)', letterSpacing: '0.04em' }}>
                     INVOICE
                   </h3>
-                  <div style={{ fontSize: '1rem', fontWeight: 800, color: '#4f46e5', marginTop: '2px' }}>
+                  <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--primary)', marginTop: '2px' }}>
                     {selectedInvoice.invoiceNumber}
                   </div>
                   <div style={{ marginTop: '8px' }}>
@@ -650,29 +650,29 @@ export default function BillingPage() {
               </div>
 
               {/* Bill To & Meta Info */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', padding: '18px', backgroundColor: '#f8fafc', borderRadius: '12px', marginBottom: '24px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', padding: '18px', backgroundColor: 'var(--bg-card)', borderRadius: '12px', marginBottom: '24px', border: '1px solid var(--border-color)' }}>
                 <div>
-                  <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Billed To:</div>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>{selectedInvoice.customerName}</div>
-                  <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{selectedInvoice.customerEmail}</div>
-                  <div style={{ fontSize: '0.82rem', color: '#475569', marginTop: '6px' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Billed To:</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)', marginTop: '4px' }}>{selectedInvoice.customerName}</div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{selectedInvoice.customerEmail}</div>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '6px' }}>
                     Contract Reference: <strong>{selectedInvoice.subscriptionNumber}</strong>
                   </div>
                 </div>
 
                 <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div style={{ fontSize: '0.86rem', color: '#475569' }}>
+                  <div style={{ fontSize: '0.86rem', color: 'var(--text-muted)' }}>
                     Issue Date: <strong>{selectedInvoice.issueDate}</strong>
                   </div>
-                  <div style={{ fontSize: '0.86rem', color: '#475569' }}>
-                    Due Date: <strong style={{ color: selectedInvoice.status === 'Overdue' ? '#dc2626' : '#0f172a' }}>{selectedInvoice.dueDate}</strong>
+                  <div style={{ fontSize: '0.86rem', color: 'var(--text-muted)' }}>
+                    Due Date: <strong style={{ color: selectedInvoice.status === 'Overdue' ? 'var(--error)' : 'var(--text-main)' }}>{selectedInvoice.dueDate}</strong>
                   </div>
                   {selectedInvoice.billingPeriodStart && (
-                    <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                       Billing Period: <strong>{selectedInvoice.billingPeriodStart} to {selectedInvoice.billingPeriodEnd}</strong>
                     </div>
                   )}
-                  <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                     Payment Terms: <strong>Net 15 Days</strong>
                   </div>
                 </div>
@@ -681,7 +681,7 @@ export default function BillingPage() {
               {/* Line Items Table */}
               <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '24px' }}>
                 <thead>
-                  <tr style={{ borderBottom: '2px solid #cbd5e1', color: '#475569', fontSize: '0.8rem', textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.03em' }}>
+                  <tr style={{ borderBottom: '2px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.03em' }}>
                     <th style={{ padding: '10px 8px' }}>Line Item Description</th>
                     <th style={{ padding: '10px 8px', textAlign: 'center' }}>Qty</th>
                     <th style={{ padding: '10px 8px', textAlign: 'right' }}>Unit Price</th>
@@ -691,14 +691,14 @@ export default function BillingPage() {
                 </thead>
                 <tbody>
                   {selectedInvoice.items && selectedInvoice.items.map((item, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.88rem' }}>
-                      <td style={{ padding: '12px 8px', fontWeight: 600, color: '#0f172a' }}>{item.name}</td>
-                      <td style={{ padding: '12px 8px', textAlign: 'center', color: '#475569' }}>{item.quantity}</td>
-                      <td style={{ padding: '12px 8px', textAlign: 'right', color: '#475569' }}>${item.unitPrice.toFixed(2)}</td>
-                      <td style={{ padding: '12px 8px', textAlign: 'right', color: '#64748b', fontSize: '0.82rem' }}>
+                    <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)', fontSize: '0.88rem' }}>
+                      <td style={{ padding: '12px 8px', fontWeight: 600, color: 'var(--text-main)' }}>{item.name}</td>
+                      <td style={{ padding: '12px 8px', textAlign: 'center', color: 'var(--text-muted)' }}>{item.quantity}</td>
+                      <td style={{ padding: '12px 8px', textAlign: 'right', color: 'var(--text-muted)' }}>${item.unitPrice.toFixed(2)}</td>
+                      <td style={{ padding: '12px 8px', textAlign: 'right', color: 'var(--text-dim)', fontSize: '0.82rem' }}>
                         {item.taxRate ? `${(item.taxRate * 100).toFixed(0)}% VAT` : '10% VAT'}
                       </td>
-                      <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>${item.total.toFixed(2)}</td>
+                      <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 700, color: 'var(--text-main)' }}>${item.total.toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -707,32 +707,32 @@ export default function BillingPage() {
               {/* Totals Section */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '24px' }}>
                 <div style={{ width: '300px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.9rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
                     <span>Subtotal:</span>
                     <span>${selectedInvoice.subtotal.toFixed(2)}</span>
                   </div>
 
                   {selectedInvoice.discountAmount > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a', fontWeight: 600 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--success)', fontWeight: 600 }}>
                       <span>Discount {selectedInvoice.discountCode ? `(${selectedInvoice.discountCode})` : ''}:</span>
                       <span>-${selectedInvoice.discountAmount.toFixed(2)}</span>
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
                     <span>Automated Taxes:</span>
                     <span>+${(selectedInvoice.taxTotal || 0).toFixed(2)}</span>
                   </div>
 
-                  <div style={{ height: '1px', background: '#cbd5e1', margin: '4px 0' }} />
+                  <div style={{ height: '1px', background: 'var(--border-color)', margin: '4px 0' }} />
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', fontWeight: 800, color: '#0f172a' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>
                     <span>Total Amount:</span>
                     <span>${selectedInvoice.total.toFixed(2)}</span>
                   </div>
 
                   {selectedInvoice.amountPaid > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#16a34a', fontWeight: 700 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--success)', fontWeight: 700 }}>
                       <span>Amount Paid:</span>
                       <span>${selectedInvoice.amountPaid.toFixed(2)}</span>
                     </div>
