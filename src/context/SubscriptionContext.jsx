@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { defaultPersonas } from '../data/mockData';
 import { formatINR } from '../utils/currency';
 
@@ -37,6 +37,9 @@ export function SubscriptionProvider({ children, initialUser }) {
   const [invoices, setInvoices] = useState([]);
   const [discounts, setDiscounts] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [billingError, setBillingError] = useState('');
+  const [billingLoading, setBillingLoading] = useState(true);
+  const paymentAttempts = useRef(new Map());
 
   const [loading, setLoading] = useState(true);
 
@@ -90,7 +93,25 @@ export function SubscriptionProvider({ children, initialUser }) {
     }
   }, []);
 
-  // Load shared records from the database on mount.
+  const refreshBilling = useCallback(async () => {
+    setBillingLoading(true);
+    try {
+      const [invoiceData, paymentData] = await Promise.all([
+        apiFetch('/api/invoices'),
+        apiFetch('/api/payments')
+      ]);
+      setInvoices(Array.isArray(invoiceData.invoices) ? invoiceData.invoices : []);
+      setPayments(Array.isArray(paymentData.payments) ? paymentData.payments : []);
+      setBillingError('');
+      return true;
+    } catch (error) {
+      setBillingError(`Unable to load billing data: ${error.message}`);
+      return false;
+    } finally {
+      setBillingLoading(false);
+    }
+  }, []);
+
   const loadAllData = useCallback(async () => {
     setLoading(true);
     setSubscriptionsLoading(true);
@@ -98,20 +119,14 @@ export function SubscriptionProvider({ children, initialUser }) {
     try {
       const [
         prodData,
-        invData,
-        payData,
         discData
       ] = await Promise.all([
-        apiFetch('/api/products').catch(() => ({ products: [] })),
-        apiFetch('/api/invoices').catch(() => ({ invoices: [] })),
-        apiFetch('/api/payments').catch(() => ({ payments: [] })),
-        apiFetch('/api/discounts').catch(() => ({ discounts: [] }))
+        apiFetch('/api/products'),
+        apiFetch('/api/discounts')
       ]);
 
       const dbProducts = prodData.products || [];
       setProducts(dbProducts);
-      setInvoices(invData.invoices || []);
-      setPayments(payData.payments || []);
       setDiscounts(discData.discounts || []);
 
       const plansMap = {};
@@ -126,13 +141,13 @@ export function SubscriptionProvider({ children, initialUser }) {
         })
       );
       setProductPlans(plansMap);
-      await Promise.all([refreshSubscriptions(), refreshSubscriptionOptions()]);
+      await Promise.all([refreshBilling(), refreshSubscriptions(), refreshSubscriptionOptions()]);
     } catch (error) {
       console.warn('Failed to load data from DB:', error.message);
     } finally {
       setLoading(false);
     }
-  }, [refreshSubscriptions, refreshSubscriptionOptions]);
+  }, [refreshBilling, refreshSubscriptions, refreshSubscriptionOptions]);
 
   useEffect(() => {
     void loadAllData();
@@ -376,24 +391,22 @@ export function SubscriptionProvider({ children, initialUser }) {
   };
 
   const getDueSubscriptions = (targetDateStr = new Date().toISOString().split('T')[0]) => {
-    const activeSubs = subscriptions.filter((s) => s.status === 'Active');
-    const due = [];
-    const alreadyBilled = [];
-    activeSubs.forEach((sub) => {
-      const isAlreadyInvoiced = invoices.some((inv) => {
-        if (inv.subscriptionNumber !== sub.subNumber || inv.status === 'Cancelled') return false;
-        if (inv.issueDate === targetDateStr) return true;
-        if (sub.billingFrequency === 'monthly' && inv.issueDate?.slice(0, 7) === targetDateStr.slice(0, 7)) return true;
-        if (sub.billingFrequency === 'yearly' && inv.issueDate?.slice(0, 4) === targetDateStr.slice(0, 4)) return true;
-        return false;
-      });
-      if (isAlreadyInvoiced) {
-        alreadyBilled.push(sub);
-      } else {
-        const isDateDue = !sub.nextBillingDate || sub.nextBillingDate <= targetDateStr;
-        if (isDateDue) due.push(sub);
-      }
-    });
+    const activeSubscriptions = subscriptions.filter((sub) => sub.status === 'Active');
+    const alreadyBilled = activeSubscriptions.filter((sub) =>
+      sub.lastBillingDate === targetDateStr || invoices.some((invoice) =>
+        invoice.subscriptionNumber === sub.subNumber &&
+        invoice.status !== 'Cancelled' &&
+        invoice.issueDate === targetDateStr
+      )
+    );
+    const billedIds = new Set(alreadyBilled.map((sub) => sub.id));
+    const due = activeSubscriptions.filter((sub) =>
+      !billedIds.has(sub.id) &&
+      Boolean(sub.nextBillingDate) &&
+      sub.nextBillingDate <= targetDateStr &&
+      (!sub.expiryDate || sub.nextBillingDate <= sub.expiryDate) &&
+      (!sub.lastBillingDate || sub.lastBillingDate < targetDateStr)
+    );
     return { due, alreadyBilled };
   };
 
@@ -444,200 +457,89 @@ export function SubscriptionProvider({ children, initialUser }) {
   };
 
   const runBillingDay = async (targetDateStr = new Date().toISOString().split('T')[0]) => {
-    const { due } = getDueSubscriptions(targetDateStr);
-    let generatedCount = 0;
-    let totalGeneratedAmount = 0;
-    const newInvoicesList = [];
-    const updatedSubIds = new Set();
-    const usedDiscountMap = {};
-
-    due.forEach((sub) => {
-      let subtotal = 0;
-      let taxTotal = 0;
-
-      const invoiceItems = sub.items.map((item) => {
-        const qty = parseInt(item.quantity, 10) || 1;
-        const price = parseFloat(item.unitPrice) || 0;
-        const lineSubtotal = qty * price;
-        subtotal += lineSubtotal;
-        const taxRate = item.taxRate !== undefined ? item.taxRate : 0.10;
-        const lineTax = lineSubtotal * taxRate;
-        taxTotal += lineTax;
-        return {
-          productId: item.productId,
-          name: `${item.name} (${item.variant || 'Standard Edition'})`,
-          quantity: qty, unitPrice: price, taxRate, taxAmount: lineTax,
-          total: lineSubtotal + lineTax
-        };
+    try {
+      const result = await apiFetch('/api/billing/run', {
+        method: 'POST',
+        body: JSON.stringify({ date: targetDateStr })
       });
-
-      let discountDeduction = 0;
-      let appliedDiscountRule = null;
-      if (sub.discountCode) {
-        const validation = validateDiscount({ code: sub.discountCode, items: sub.items, subtotal, date: targetDateStr });
-        if (validation.valid) {
-          discountDeduction = validation.deduction;
-          appliedDiscountRule = validation.rule;
-          usedDiscountMap[appliedDiscountRule.code] = (usedDiscountMap[appliedDiscountRule.code] || 0) + 1;
-        }
-      }
-
-      if (discountDeduction > 0 && subtotal > 0) {
-        taxTotal = taxTotal * ((subtotal - discountDeduction) / subtotal);
-      }
-
-      const total = Math.max(0, subtotal - discountDeduction + taxTotal);
-      const dueDate = computeDueDate(targetDateStr, sub.paymentTerms);
-
-      newInvoicesList.push({
-        id: `inv-${Date.now()}-${generatedCount}`,
-        invoiceNumber: `INV-${new Date().getFullYear()}-${String(invoices.length + generatedCount + 1).padStart(3, '0')}`,
-        subscriptionNumber: sub.subNumber,
-        customerName: sub.customerName,
-        customerEmail: sub.customerEmail,
-        issueDate: targetDateStr,
-        dueDate,
-        billingPeriodStart: sub.nextBillingDate || targetDateStr,
-        billingPeriodEnd: advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency),
-        subtotal, taxTotal,
-        discountAmount: discountDeduction,
-        discountCode: appliedDiscountRule ? appliedDiscountRule.code : null,
-        total, amountPaid: 0, balance: total,
-        status: 'Confirmed', sentAt: null, items: invoiceItems
-      });
-
-      updatedSubIds.add(sub.id);
-      generatedCount++;
-      totalGeneratedAmount += total;
-    });
-
-    if (newInvoicesList.length > 0) {
-      // Persist all new invoices to DB
-      try {
-        const bulkRes = await apiFetch('/api/invoices/bulk', {
-          method: 'POST',
-          body: JSON.stringify({ invoices: newInvoicesList })
-        });
-        setInvoices((prev) => [...(bulkRes.invoices || newInvoicesList), ...prev]);
-      } catch {
-        setInvoices((prev) => [...newInvoicesList, ...prev]);
-      }
-
-      const billingDateUpdates = subscriptions
-        .filter((sub) => updatedSubIds.has(sub.id))
-        .map((sub) => ({
-          ...sub,
-          lastBillingDate: targetDateStr,
-          nextBillingDate: advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency)
-        }));
-      const updatedBillingById = new Map(billingDateUpdates.map((sub) => [sub.id, sub]));
-      setSubscriptions((prev) => prev.map((sub) => updatedBillingById.get(sub.id) || sub));
-      billingDateUpdates.forEach((sub) => {
-        void saveSubscriptionBillingDates(sub.id, {
-          lastBillingDate: sub.lastBillingDate,
-          nextBillingDate: sub.nextBillingDate
-        });
-      });
-
-      // Record discount usage in DB
-      if (Object.keys(usedDiscountMap).length > 0) {
-        Object.entries(usedDiscountMap).forEach(([code, count]) => {
-          apiFetch('/api/discounts/use', { method: 'POST', body: JSON.stringify({ code, count }) })
-            .catch((e) => console.warn('Could not record discount usage:', e.message));
-        });
-        setDiscounts((prev) =>
-          prev.map((d) => {
-            const count = usedDiscountMap[d.code];
-            if (count) {
-              const newTimesUsed = (d.timesUsed || 0) + count;
-              return { ...d, timesUsed: newTimesUsed, isActive: (d.usageLimit && newTimesUsed >= d.usageLimit) ? false : d.isActive };
-            }
-            return d;
-          })
-        );
-      }
-
+      const [billingRefreshed] = await Promise.all([refreshBilling(), refreshSubscriptions()]);
       showToast(
-        `⚡ Billing Day Run: ${newInvoicesList.length} invoices generated (${formatINR(totalGeneratedAmount)})! Next billing dates advanced.`,
-        'success'
+        billingRefreshed
+          ? `Billing complete: ${result.generatedCount} invoice(s) created.`
+          : 'Billing completed, but the invoice list could not be refreshed.',
+        billingRefreshed ? 'success' : 'error'
       );
-    } else {
-      showToast(`All active subscriptions are up to date for ${targetDateStr}. No invoices due.`, 'info');
+      return result;
+    } catch (error) {
+      showToast(error.message || 'Billing run failed.', 'error');
+      return null;
     }
-
-    return { generatedCount, totalAmount: totalGeneratedAmount, invoices: newInvoicesList };
   };
 
-  // ── Invoice Actions ───────────────────────────────────────────────────────
-
-  const confirmInvoice = async (invoiceId) => {
+  const updateInvoiceStatus = async (id, action) => {
     try {
-      const data = await apiFetch(`/api/invoices/${invoiceId}`, { method: 'PATCH', body: JSON.stringify({ status: 'Confirmed' }) });
-      setInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? data.invoice : inv));
-    } catch {
-      setInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? { ...inv, status: 'Confirmed' } : inv));
+      await apiFetch(`/api/invoices/${encodeURIComponent(id)}/actions/${action}`, { method: 'POST' });
+      const refreshed = await refreshBilling();
+      showToast(
+        refreshed ? `Invoice ${action === 'confirm' ? 'confirmed' : 'cancelled'}.` : 'Invoice updated, but billing data could not be refreshed.',
+        refreshed ? 'success' : 'error'
+      );
+      return true;
+    } catch (error) {
+      showToast(error.message || 'Could not update the invoice.', 'error');
+      return false;
     }
-    showToast('Invoice confirmed and queued for collection.', 'success');
   };
 
-  const cancelInvoice = async (invoiceId) => {
-    try {
-      const data = await apiFetch(`/api/invoices/${invoiceId}`, { method: 'PATCH', body: JSON.stringify({ status: 'Cancelled' }) });
-      setInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? data.invoice : inv));
-    } catch {
-      setInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? { ...inv, status: 'Cancelled' } : inv));
-    }
-    showToast('Invoice has been cancelled.', 'info');
-  };
-
-  const sendInvoice = async (invoiceId) => {
-    const sentAt = new Date().toISOString();
-    try {
-      const data = await apiFetch(`/api/invoices/${invoiceId}`, { method: 'PATCH', body: JSON.stringify({ sentAt }) });
-      setInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? data.invoice : inv));
-    } catch {
-      setInvoices((prev) => prev.map((inv) => inv.id === invoiceId ? { ...inv, sentAt } : inv));
-    }
-    showToast('Invoice PDF dispatched via email to customer.', 'success');
+  const confirmInvoice = (id) => updateInvoiceStatus(id, 'confirm');
+  const cancelInvoice = (id) => updateInvoiceStatus(id, 'cancel');
+  const sendInvoice = () => {
+    showToast('Email delivery is not configured.', 'error');
   };
 
   const recordPayment = async ({ invoiceId, amount, method, note, transactionRef }) => {
-    const targetInvoice = invoices.find((inv) => inv.id === invoiceId);
-    if (!targetInvoice) return;
-
-    const paymentAmount = parseFloat(amount);
-    const newPaidTotal = (targetInvoice.amountPaid || 0) + paymentAmount;
-    const newBalance = Math.max(0, targetInvoice.total - newPaidTotal);
-    const newStatus = newBalance <= 0.01 ? 'Paid' : 'Partially Paid';
-
-    const paymentData = {
-      invoiceId,
-      invoiceNumber: targetInvoice.invoiceNumber,
-      customerName: targetInvoice.customerName,
-      date: new Date().toISOString().split('T')[0],
-      method: method || 'Credit Card (Stripe)',
-      amount: paymentAmount,
-      transactionRef: transactionRef || `TXN-${Math.floor(100000 + Math.random() * 900000)}`,
-      note: note || 'Payment recorded',
-      status: 'Completed',
-      paymentNumber: `PAY-${new Date().getFullYear()}-${String(payments.length + 1).padStart(3, '0')}`,
-      // Pass along invoice totals so server can update invoice in one call
-      invoiceTotal: targetInvoice.total,
-      invoiceAmountPaid: targetInvoice.amountPaid || 0
+    const supportedMethods = {
+      'Credit Card (Stripe)': 'Credit Card',
+      'Bank Wire / ACH': 'Bank Transfer',
+      'Direct Debit': 'Direct Debit',
+      'Cash Settlement': 'Cash',
+      'Online Customer Portal': 'Online'
     };
+    const paymentMethod = supportedMethods[method];
+    if (!paymentMethod) {
+      showToast('This payment method is not supported.', 'error');
+      return false;
+    }
+
+    const paymentAmount = Number(amount);
+    const signature = JSON.stringify([invoiceId, paymentAmount, paymentMethod, note || '', transactionRef || '']);
+    if (!paymentAttempts.current.has(signature)) {
+      const key = globalThis.crypto?.randomUUID?.() || `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      paymentAttempts.current.set(signature, key);
+    }
 
     try {
-      const data = await apiFetch('/api/payments', { method: 'POST', body: JSON.stringify(paymentData) });
+      const data = await apiFetch(`/api/invoices/${encodeURIComponent(invoiceId)}/payments`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': paymentAttempts.current.get(signature) },
+        body: JSON.stringify({
+          amount: paymentAmount,
+          method: paymentMethod,
+          note: note || '',
+          transactionRef: transactionRef || ''
+        })
+      });
       if (!data.payment) throw new Error('The server did not return the saved payment.');
-      setPayments((prev) => [data.payment, ...prev]);
-    setInvoices((prev) =>
-      prev.map((inv) =>
-        inv.id === invoiceId ? { ...inv, amountPaid: newPaidTotal, balance: newBalance, status: newStatus } : inv
-      )
-    );
-      showToast(`Payment of ${formatINR(paymentAmount)} recorded for ${targetInvoice.invoiceNumber}`, 'success');
+      paymentAttempts.current.delete(signature);
+      const refreshed = await refreshBilling();
+      showToast(
+        refreshed ? 'Payment recorded.' : 'Payment recorded, but billing data could not be refreshed.',
+        refreshed ? 'success' : 'error'
+      );
+      return true;
     } catch (error) {
-      showToast(`Could not record payment: ${error.message}`, 'error');
+      showToast(error.message || 'Could not record payment.', 'error');
+      return false;
     }
   };
 
@@ -732,6 +634,9 @@ export function SubscriptionProvider({ children, initialUser }) {
         subscriptionOptionsError,
         refreshSubscriptionOptions,
         invoices,
+        billingError,
+        billingLoading,
+        refreshBilling,
         discounts,
         payments,
         loading,

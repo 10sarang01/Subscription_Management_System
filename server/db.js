@@ -4,33 +4,14 @@ const bcrypt = require('bcryptjs');
 // Database path for official SQLite database
 const DB_PATH = path.join(__dirname, '..', 'brightloop.db');
 
-let db;
-try {
-  const Database = require('better-sqlite3');
-  db = new Database(DB_PATH);
-} catch (err) {
-  // Graceful fallback to Node.js v24 built-in SQLite driver when better-sqlite3 native bindings are unavailable
-  const { DatabaseSync } = require('node:sqlite');
-  const syncDb = new DatabaseSync(DB_PATH);
-  syncDb.pragma = (cmd) => {
-    try {
-      syncDb.exec(`PRAGMA ${cmd}`);
-    } catch (e) {
-      // pragma fallback
-    }
-  };
-  db = syncDb;
-}
-
-// Enable WAL mode and foreign keys
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-
+const SQLite = require('./sqlite');
+const db = new SQLite(DB_PATH);
 console.log('📦 Connected to SQLite database at:', DB_PATH);
 
 // Initialize Tables
 async function initDatabase() {
-  db.exec(`
+  await db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -215,19 +196,30 @@ async function initDatabase() {
     );
   `);
 
+  // Older database files predate JSON-backed product variants.
+  const productColumns = await db.prepare('PRAGMA table_info(products)').all();
+  if (!productColumns.some((column) => column.name === 'variants_json')) {
+    await db.exec('ALTER TABLE products ADD COLUMN variants_json TEXT');
+  }
+
+  const paymentColumns = await db.prepare('PRAGMA table_info(payments)').all();
+  if (paymentColumns.length && !paymentColumns.some((column) => column.name === 'transaction_ref')) {
+    await db.exec('ALTER TABLE payments ADD COLUMN transaction_ref TEXT');
+  }
+
   // Ensure Admin exists
-  const adminCheck = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
+  const adminCheck = await db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
   if (!adminCheck) {
     const saltRounds = 10;
     const adminPassword = 'Admin@BrightLoop2026!';
     const adminHash = bcrypt.hashSync(adminPassword, saltRounds);
 
-    const insertUser = db.prepare(`
+    const insertUser = await db.prepare(`
       INSERT INTO users (id, email, password_hash, full_name, role, company_name, phone)
       VALUES (1, ?, ?, ?, ?, ?, ?)
     `);
 
-    insertUser.run(
+    await insertUser.run(
       'admin@brightloop.com',
       adminHash,
       'Elena Vance (Admin)',
@@ -242,7 +234,7 @@ async function initDatabase() {
   }
 
   // Ensure Default Hardcoded Discounts exist in SQLite database
-  const discountCheck = db.prepare("SELECT COUNT(*) as count FROM discounts").get();
+  const discountCheck = await db.prepare("SELECT COUNT(*) as count FROM discounts").get();
   if (!discountCheck || discountCheck.count === 0) {
     const seedDiscounts = [
       {
@@ -311,13 +303,13 @@ async function initDatabase() {
       }
     ];
 
-    const insertDisc = db.prepare(`
+    const insertDisc = await db.prepare(`
       INSERT INTO discounts (id, code, name, type, value, scope, target_product_id, min_quantity, min_amount, start_date, end_date, usage_limit, times_used, is_active)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    seedDiscounts.forEach((d) => {
-      insertDisc.run(
+    for (const d of seedDiscounts) {
+      await insertDisc.run(
         d.id,
         d.code,
         d.name,
@@ -333,7 +325,7 @@ async function initDatabase() {
         d.times_used,
         d.is_active
       );
-    });
+    }
 
     console.log('✅ SQLite discounts table initialized and seeded with default discounts.');
   }
@@ -355,17 +347,18 @@ async function getAllUsers() {
 async function createUser({ email, password, full_name, role = 'customer', company_name = '', phone = '', created_by = null }) {
   const saltRounds = 10;
   const hash = bcrypt.hashSync(password, saltRounds);
-  const stmt = db.prepare(`
+  const stmt = await db.prepare(`
     INSERT INTO users (email, password_hash, full_name, role, company_name, phone, created_by)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
-  const result = stmt.run(email.trim().toLowerCase(), hash, full_name.trim(), role, company_name.trim(), phone.trim(), created_by);
+  const result = await stmt.run(email.trim().toLowerCase(), hash, full_name.trim(), role, company_name.trim(), phone.trim(), created_by);
   return await getUserById(result.lastInsertRowid);
 }
 
 // ─── Product query functions ───────────────────────────────────────────────
 
 async function getAllProducts() {
+<<<<<<< HEAD
   const rows = db.prepare('SELECT * FROM products ORDER BY created_at DESC').all();
   const allVariants = db.prepare('SELECT id, product_id, attribute_name, attribute_value, extra_price FROM product_variants ORDER BY id ASC').all();
   
@@ -382,6 +375,9 @@ async function getAllProducts() {
     });
   }
 
+=======
+  const rows = await db.prepare('SELECT * FROM products ORDER BY created_at DESC').all();
+>>>>>>> d743db1a2968fe6422784227d2e0ec9eb7bdc77d
   return rows.map(r => ({
     id: r.id,
     name: r.name,
@@ -418,11 +414,17 @@ async function createProduct({ id, name, type, salesPrice, costPrice, notes, has
     priceOffset: Math.max(0, parseFloat(v.priceOffset) || 0)
   }));
 
+<<<<<<< HEAD
   const stmt = db.prepare(`
     INSERT INTO products (id, name, type, product_type, sales_price, cost_price, notes, has_odoo_variant, odoo_price_offset)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+=======
+  const stmt = await db.prepare(`
+    INSERT INTO products (id, name, type, product_type, sales_price, cost_price, notes, has_odoo_variant, odoo_price_offset, variants_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+>>>>>>> d743db1a2968fe6422784227d2e0ec9eb7bdc77d
   `);
-  stmt.run(
+  await stmt.run(
     prodId,
     name.trim(),
     type,
@@ -528,7 +530,16 @@ async function updateProduct(id, { name, type, salesPrice, costPrice, notes, has
     }
   }
 
+<<<<<<< HEAD
   const r = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+=======
+  if (allowedCols.length === 0) return null;
+  values.push(id);
+
+  await db.prepare(`UPDATE products SET ${allowedCols.join(', ')} WHERE id = ?`).run(...values);
+
+  const r = await db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+>>>>>>> d743db1a2968fe6422784227d2e0ec9eb7bdc77d
   if (!r) return null;
 
   const productVariants = db.prepare('SELECT id, attribute_name, attribute_value, extra_price FROM product_variants WHERE product_id = ? ORDER BY id ASC').all(id);
@@ -554,7 +565,7 @@ async function updateProduct(id, { name, type, salesPrice, costPrice, notes, has
 // ─── Legacy global plans (kept for backward compatibility) ─────────────────
 
 async function getAllPlans() {
-  const rows = db.prepare('SELECT * FROM plans ORDER BY created_at DESC').all();
+  const rows = await db.prepare('SELECT * FROM plans ORDER BY created_at DESC').all();
   return rows.map(r => ({
     id: r.id,
     name: r.name,
@@ -573,11 +584,11 @@ async function getAllPlans() {
 
 async function createPlan({ id, name, cost, frequency, minQuantity = 1, startDate, endDate, autoCloseOnEnd = true, canCloseEarly = true, canPause = true, canRenew = true, description = '' }) {
   const planId = id || `plan-${Date.now()}`;
-  const stmt = db.prepare(`
+  const stmt = await db.prepare(`
     INSERT INTO plans (id, name, cost, frequency, min_quantity, start_date, end_date, auto_close_on_end, can_close_early, can_pause, can_renew, description)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  stmt.run(
+  await stmt.run(
     planId,
     name.trim(),
     parseFloat(cost) || 0,
@@ -636,14 +647,14 @@ function mapProductPlanRow(r) {
 }
 
 async function getPlansByProductId(productId) {
-  const rows = db.prepare(
+  const rows = await db.prepare(
     'SELECT * FROM product_plans WHERE product_id = ? ORDER BY created_at ASC'
   ).all(productId);
   return rows.map(mapProductPlanRow);
 }
 
 async function getAllProductPlans() {
-  const rows = db.prepare('SELECT * FROM product_plans ORDER BY product_id, created_at ASC').all();
+  const rows = await db.prepare('SELECT * FROM product_plans ORDER BY product_id, created_at ASC').all();
   return rows.map(mapProductPlanRow);
 }
 
@@ -664,19 +675,23 @@ async function createProductPlan({
 }) {
   const planId = id || `pp-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   const validPrice = Math.max(0, parseFloat(price) || 0);
+<<<<<<< HEAD
   const today = new Date().toISOString().slice(0, 10);
   const nextYear = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
   const validFrom = availableFrom || today;
   const validUntil = availableUntil || nextYear;
 
   const stmt = db.prepare(`
+=======
+  const stmt = await db.prepare(`
+>>>>>>> d743db1a2968fe6422784227d2e0ec9eb7bdc77d
     INSERT INTO product_plans
       (id, product_id, name, price, billing_interval, minimum_quantity,
        available_from, available_until, auto_close, allow_early_close,
        allow_pause, allow_renew, description)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  stmt.run(
+  await stmt.run(
     planId,
     productId,
     name.trim(),
@@ -738,16 +753,16 @@ async function updateProductPlan(planId, updates) {
   setClauses.push('updated_at = CURRENT_TIMESTAMP');
   values.push(planId);
 
-  db.prepare(`UPDATE product_plans SET ${setClauses.join(', ')} WHERE id = ?`).run(...values);
-  const row = db.prepare('SELECT * FROM product_plans WHERE id = ?').get(planId);
+  await db.prepare(`UPDATE product_plans SET ${setClauses.join(', ')} WHERE id = ?`).run(...values);
+  const row = await db.prepare('SELECT * FROM product_plans WHERE id = ?').get(planId);
   return row ? mapProductPlanRow(row) : null;
 }
 
 async function toggleProductPlanStatus(planId, isActive) {
-  db.prepare(
+  await db.prepare(
     'UPDATE product_plans SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
   ).run(isActive ? 1 : 0, planId);
-  const row = db.prepare('SELECT * FROM product_plans WHERE id = ?').get(planId);
+  const row = await db.prepare('SELECT * FROM product_plans WHERE id = ?').get(planId);
   return row ? mapProductPlanRow(row) : null;
 }
 
@@ -779,18 +794,18 @@ function mapDiscountRow(r) {
 }
 
 async function getAllDiscounts() {
-  const rows = db.prepare('SELECT * FROM discounts ORDER BY created_at DESC').all();
+  const rows = await db.prepare('SELECT * FROM discounts ORDER BY created_at DESC').all();
   return rows.map(mapDiscountRow);
 }
 
 async function getDiscountByCode(code) {
   if (!code) return null;
-  const row = db.prepare('SELECT * FROM discounts WHERE code = ? COLLATE NOCASE').get(code.trim());
+  const row = await db.prepare('SELECT * FROM discounts WHERE code = ? COLLATE NOCASE').get(code.trim());
   return row ? mapDiscountRow(row) : null;
 }
 
 async function getDiscountById(id) {
-  const row = db.prepare('SELECT * FROM discounts WHERE id = ?').get(id);
+  const row = await db.prepare('SELECT * FROM discounts WHERE id = ?').get(id);
   return row ? mapDiscountRow(row) : null;
 }
 
@@ -819,12 +834,12 @@ async function createDiscount({
   const cleanMinAmt = Math.max(0, parseFloat(minAmount) || 0);
   const cleanUsageLimit = Math.max(1, parseInt(usageLimit, 10) || 100);
 
-  const stmt = db.prepare(`
+  const stmt = await db.prepare(`
     INSERT INTO discounts (id, code, name, type, value, scope, target_product_id, min_quantity, min_amount, start_date, end_date, usage_limit, times_used, is_active)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
   `);
 
-  stmt.run(
+  await stmt.run(
     discId,
     cleanCode,
     cleanName,
@@ -845,9 +860,9 @@ async function createDiscount({
 async function toggleDiscountStatus(id, isActive) {
   const newActive = isActive !== undefined ? (isActive ? 1 : 0) : null;
   if (newActive !== null) {
-    db.prepare('UPDATE discounts SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newActive, id);
+    await db.prepare('UPDATE discounts SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newActive, id);
   } else {
-    db.prepare('UPDATE discounts SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+    await db.prepare('UPDATE discounts SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
   }
   return getDiscountById(id);
 }
@@ -861,7 +876,7 @@ async function incrementDiscountUsage(code, count = 1) {
   const newCount = disc.timesUsed + count;
   const shouldDeactivate = disc.usageLimit && newCount >= disc.usageLimit;
 
-  db.prepare(`
+  await db.prepare(`
     UPDATE discounts 
     SET times_used = ?, 
         is_active = CASE WHEN ? = 1 THEN 0 ELSE is_active END,
@@ -877,6 +892,7 @@ async function deleteDiscount(id) {
 }
 
 async function getVariantsByProductId(productId) {
+<<<<<<< HEAD
   const rows = db.prepare('SELECT id, product_id, attribute_name, attribute_value, extra_price, sku, is_active FROM product_variants WHERE product_id = ? ORDER BY id ASC').all(productId);
   return rows.map(v => ({
     id: v.id,
@@ -1135,6 +1151,10 @@ async function updateTemplateDB(id, updates) {
 
 async function deleteTemplateDB(id) {
   return db.prepare('DELETE FROM app_quotation_templates WHERE id = ?').run(id);
+=======
+  const product = await db.prepare('SELECT variants_json FROM products WHERE id = ?').get(productId);
+  return product && product.variants_json ? JSON.parse(product.variants_json) : [];
+>>>>>>> d743db1a2968fe6422784227d2e0ec9eb7bdc77d
 }
 
 module.exports = {

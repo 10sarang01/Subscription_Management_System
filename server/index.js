@@ -4,7 +4,11 @@ const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const { getInvoices, getPayments, transitionInvoice } = require('./invoices');
+const { recordPayment, PaymentError } = require('./payments');
+const { runBilling, BillingError } = require('./billing');
 const {
+  db,
   initDatabase,
   getUserByEmail,
   getUserById,
@@ -59,7 +63,11 @@ app.use(cors());
 app.use(express.json());
 
 // Initialize SQLite database
-initDatabase().catch(err => console.error('Failed to init SQLite DB:', err));
+const databaseReady = initDatabase();
+app.use(async (req, res, next) => {
+  try { await databaseReady; next(); }
+  catch (err) { console.error('Database initialization failed:', err); res.status(503).json({ error: 'Database unavailable.' }); }
+});
 
 const subscriptionRoutes = require('./subscriptionRoutes');
 
@@ -547,6 +555,43 @@ app.delete('/api/plans/:planId', async (req, res) => {
     res.json({ message: 'Plan deleted.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete plan.' });
+  }
+});
+
+app.post('/api/billing/run', authenticateToken, async (req, res) => {
+  try { res.json(await runBilling(db, req.body.date, req.user)); }
+  catch (err) { if (err instanceof BillingError) return res.status(err.status).json({ error: err.message }); console.error('Billing run error:', err); res.status(500).json({ error: 'Billing run failed; no invoices were created.' }); }
+});
+
+// Customers may read only their own invoices.
+app.get('/api/invoices', authenticateToken, async (req, res) => {
+  try {
+    res.json({ invoices: await getInvoices(db, req.user) });
+  } catch (err) {
+    console.error('Fetch invoices error:', err);
+    res.status(500).json({ error: 'Failed to fetch invoices.' });
+  }
+});
+
+app.get('/api/payments', authenticateToken, async (req, res) => {
+  try { res.json({ payments: await getPayments(db, req.user) }); }
+  catch (err) { console.error('Fetch payments error:', err); res.status(500).json({ error: 'Failed to fetch payments.' }); }
+});
+
+app.post('/api/invoices/:id/actions/:action', authenticateToken, async (req, res) => {
+  try { res.json({ invoice: await transitionInvoice(db, req.params.id, req.params.action, req.user) }); }
+  catch (err) { if (err.status) return res.status(err.status).json({ error: err.message }); console.error('Invoice update error:', err); res.status(500).json({ error: 'Failed to update invoice.' }); }
+});
+
+// Record an already-received payment; this endpoint does not charge a payment method.
+app.post('/api/invoices/:id/payments', authenticateToken, async (req, res) => {
+  try {
+    const result = await recordPayment(db, { invoiceId: req.params.id, amount: req.body.amount, method: req.body.method, note: req.body.note, transactionRef: req.body.transactionRef, idempotencyKey: req.get('Idempotency-Key') }, req.user);
+    res.status(result.replayed ? 200 : 201).json(result);
+  } catch (err) {
+    if (err instanceof PaymentError) return res.status(err.status).json({ error: err.message });
+    console.error('Record payment error:', err);
+    res.status(500).json({ error: 'Failed to record payment.' });
   }
 });
 

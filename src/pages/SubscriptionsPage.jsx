@@ -635,7 +635,7 @@ export default function SubscriptionsPage() {
                       className="neu-btn-primary"
                       style={{ padding: '8px 14px', fontSize: '0.82rem' }}
                     >
-                      <Zap size={14} /> Generate Invoice Now
+                      <Zap size={14} /> Run Billing Day
                     </button>
                   </>
                 )}

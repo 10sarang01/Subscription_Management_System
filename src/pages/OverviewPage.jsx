@@ -92,12 +92,12 @@ export default function OverviewPage() {
             </div>
           </div>
           <div className="metric-value">
-            ${mrr.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            ₹{mrr.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
             <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>/mo</span>
           </div>
           <div className="metric-trend" style={{ color: 'var(--success)' }}>
             <ArrowUpRight size={15} />
-            <span>ARR Run Rate: ${(arr).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+            <span>ARR Run Rate: ₹{(arr).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
           </div>
         </div>
 
@@ -124,7 +124,7 @@ export default function OverviewPage() {
             </div>
           </div>
           <div className="metric-value">
-            ${totalCollected.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            ₹{totalCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </div>
           <div className="metric-trend" style={{ color: 'var(--success)' }}>
             <CheckCircle2 size={15} />
@@ -141,7 +141,7 @@ export default function OverviewPage() {
             </div>
           </div>
           <div className="metric-value">
-            ${totalOutstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            ₹{totalOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </div>
           <div className="metric-trend" style={{ color: '#d97706' }}>
             <span>{outstandingInvoices.length} invoices awaiting payment</span>
@@ -157,7 +157,7 @@ export default function OverviewPage() {
             </div>
           </div>
           <div className="metric-value" style={{ color: 'var(--error)' }}>
-            ${totalOverdue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            ₹{totalOverdue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </div>
           <div className="metric-trend" style={{ color: 'var(--error)' }}>
             <span>{overdueInvoices.length} invoices overdue</span>
@@ -264,7 +264,7 @@ export default function OverviewPage() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <span style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--error)' }}>
-                      ${inv.balance.toFixed(2)}
+                      ₹{inv.balance.toFixed(2)}
                     </span>
                     <button
                       onClick={() => sendPaymentReminder(inv.id)}

@@ -49,24 +49,24 @@ export default function PaymentsPage() {
       setSelectedInvoiceId('');
       setPaymentAmount('');
     }
-    setTransactionRef(`TXN-${Math.floor(100000 + Math.random() * 900000)}`);
+    setTransactionRef('');
     setPaymentNote('Settlement processed via Payments center');
     setShowModal(true);
   };
 
   const handleInvoiceChange = (invId) => {
     setSelectedInvoiceId(invId);
-    const target = unpaidInvoices.find((i) => i.id === invId);
+    const target = unpaidInvoices.find((i) => String(i.id) === String(invId));
     if (target) {
       setPaymentAmount(target.balance.toFixed(2));
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedInvoiceId) return;
 
-    recordPayment({
+    const recorded = await recordPayment({
       invoiceId: selectedInvoiceId,
       amount: parseFloat(paymentAmount),
       method: paymentMethod,
@@ -74,7 +74,7 @@ export default function PaymentsPage() {
       transactionRef
     });
 
-    setShowModal(false);
+    if (recorded) setShowModal(false);
   };
 
   return (
@@ -111,7 +111,7 @@ export default function PaymentsPage() {
             <CheckCircle2 size={18} style={{ color: 'var(--success)' }} />
           </div>
           <div className="metric-value">
-            ${totalCollected.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            ₹{totalCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </div>
           <div className="metric-trend" style={{ color: 'var(--success)' }}>
             <span>{payments.length} transactions completed</span>
@@ -124,7 +124,7 @@ export default function PaymentsPage() {
             <Clock size={18} style={{ color: '#d97706' }} />
           </div>
           <div className="metric-value">
-            ${totalOutstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            ₹{totalOutstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </div>
           <div className="metric-trend" style={{ color: '#d97706' }}>
             <span>{unpaidInvoices.length} invoices pending payment</span>
@@ -179,9 +179,9 @@ export default function PaymentsPage() {
                     <td style={{ fontSize: '0.84rem', color: inv.status === 'Overdue' ? 'var(--error)' : 'var(--text-main)', fontWeight: inv.status === 'Overdue' ? 700 : 400 }}>
                       {inv.dueDate} {inv.status === 'Overdue' ? `(${inv.daysOverdue || 15}d overdue)` : ''}
                     </td>
-                    <td style={{ fontWeight: 600 }}>${inv.total.toFixed(2)}</td>
+                    <td style={{ fontWeight: 600 }}>₹{inv.total.toFixed(2)}</td>
                     <td style={{ fontWeight: 800, fontSize: '1rem', color: inv.status === 'Overdue' ? 'var(--error)' : '#d97706' }}>
-                      ${inv.balance.toFixed(2)}
+                      ₹{inv.balance.toFixed(2)}
                     </td>
                     <td>
                       <span className={`status-pill status-${inv.status.toLowerCase().replace(' ', '-')}`}>
@@ -257,7 +257,7 @@ export default function PaymentsPage() {
                     </span>
                   </td>
                   <td style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--success)' }}>
-                    +${p.amount.toFixed(2)}
+                    +₹{p.amount.toFixed(2)}
                   </td>
                   <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
                     {p.transactionRef}
@@ -298,7 +298,7 @@ export default function PaymentsPage() {
                   >
                     {unpaidInvoices.map((inv) => (
                       <option key={inv.id} value={inv.id}>
-                        {inv.invoiceNumber} — {inv.customerName} (${inv.balance.toFixed(2)} due)
+                        {inv.invoiceNumber} — {inv.customerName} (₹{inv.balance.toFixed(2)} due)
                       </option>
                     ))}
                   </select>
@@ -308,7 +308,7 @@ export default function PaymentsPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
                 <div>
                   <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
-                    Amount ($)
+                    Amount (₹)
                   </label>
                   <input
                     type="number"
@@ -331,7 +331,7 @@ export default function PaymentsPage() {
                     <option value="Credit Card (Stripe)">Credit Card (Stripe)</option>
                     <option value="Bank Wire / ACH">Bank Wire / ACH</option>
                     <option value="Direct Debit">Direct Debit</option>
-                    <option value="Corporate Check">Corporate Check</option>
+                    
                     <option value="Cash Settlement">Cash Settlement</option>
                   </select>
                 </div>
