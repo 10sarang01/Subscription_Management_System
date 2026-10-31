@@ -1,51 +1,20 @@
-const sqlite3 = require('sqlite3').verbose();
+const Database = require('better-sqlite3');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 
 // Database path for official SQLite database
 const DB_PATH = path.join(__dirname, '..', 'users.db');
+const db = new Database(DB_PATH);
 
-const db = new sqlite3.Database(DB_PATH, (err) => {
-  if (err) {
-    console.error('❌ Error connecting to SQLite database:', err.message);
-  } else {
-    console.log('📦 Connected to SQLite database at:', DB_PATH);
-  }
-});
+// Enable WAL mode and foreign keys
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
-// Helper for promise-based queries
-function run(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve(this);
-    });
-  });
-}
-
-function get(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-}
-
-function all(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
-}
+console.log('📦 Connected to SQLite database at:', DB_PATH);
 
 // Initialize Users Table and default Admin
 async function initDatabase() {
-  await run('PRAGMA foreign_keys = ON');
-
-  await run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -58,58 +27,54 @@ async function initDatabase() {
       is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
   `);
 
-  await run(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`);
-  await run(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`);
-
   // Ensure Admin exists
-  const adminCheck = await get("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+  const adminCheck = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
   if (!adminCheck) {
     const saltRounds = 10;
     const adminPassword = 'Admin@BrightLoop2026!';
     const adminHash = bcrypt.hashSync(adminPassword, saltRounds);
 
-    await run(`
+    const insertUser = db.prepare(`
       INSERT INTO users (email, password_hash, full_name, role, company_name, phone)
       VALUES (?, ?, ?, ?, ?, ?)
-    `, [
+    `);
+
+    insertUser.run(
       'admin@brightloop.com',
       adminHash,
       'Elena Vance (Admin)',
       'admin',
       'Brightloop Software Inc.',
       '+1-555-0100'
-    ]);
+    );
 
     const staffHash = bcrypt.hashSync('Staff@BrightLoop2026!', saltRounds);
-    await run(`
-      INSERT INTO users (email, password_hash, full_name, role, company_name, phone)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [
+    insertUser.run(
       'sarah.ops@brightloop.com',
       staffHash,
       'Sarah Jenkins',
       'staff',
       'Brightloop Software Inc.',
       '+1-555-0101'
-    ]);
+    );
 
     const customerHash = bcrypt.hashSync('Customer@BrightLoop2026!', saltRounds);
-    await run(`
-      INSERT INTO users (email, password_hash, full_name, role, company_name, phone)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [
+    insertUser.run(
       'alice@cornerbakery.com',
       customerHash,
       'Alice Smith',
       'customer',
       'Corner Bakery & Cafe',
       '+1-555-0102'
-    ]);
+    );
 
-    console.log('✅ SQLite users table initialized and seeded with Admin user.');
+    console.log('✅ SQLite users table initialized and seeded with Admin, Staff, and Customer accounts.');
   } else {
     console.log('ℹ️ SQLite database already contains admin user.');
   }
@@ -117,25 +82,26 @@ async function initDatabase() {
 
 // User query functions
 async function getUserByEmail(email) {
-  return await get('SELECT * FROM users WHERE email = ?', [email.trim().toLowerCase()]);
+  return db.prepare('SELECT * FROM users WHERE email = ?').get(email.trim().toLowerCase());
 }
 
 async function getUserById(id) {
-  return await get('SELECT id, email, full_name, role, company_name, phone, is_active, created_at FROM users WHERE id = ?', [id]);
+  return db.prepare('SELECT id, email, full_name, role, company_name, phone, is_active, created_at FROM users WHERE id = ?').get(id);
 }
 
 async function getAllUsers() {
-  return await all('SELECT id, email, full_name, role, company_name, phone, is_active, created_at FROM users ORDER BY id ASC');
+  return db.prepare('SELECT id, email, full_name, role, company_name, phone, is_active, created_at FROM users ORDER BY id ASC').all();
 }
 
 async function createUser({ email, password, full_name, role = 'customer', company_name = '', phone = '', created_by = null }) {
   const saltRounds = 10;
   const hash = bcrypt.hashSync(password, saltRounds);
-  const result = await run(`
+  const stmt = db.prepare(`
     INSERT INTO users (email, password_hash, full_name, role, company_name, phone, created_by)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `, [email.trim().toLowerCase(), hash, full_name.trim(), role, company_name.trim(), phone.trim(), created_by]);
-  return await getUserById(result.lastID);
+  `);
+  const result = stmt.run(email.trim().toLowerCase(), hash, full_name.trim(), role, company_name.trim(), phone.trim(), created_by);
+  return await getUserById(result.lastInsertRowid);
 }
 
 module.exports = {

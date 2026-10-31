@@ -13,8 +13,7 @@ import PaymentsPage from './pages/PaymentsPage';
 import CustomerPortalPage from './pages/CustomerPortalPage';
 import TeamPage from './pages/TeamPage';
 import { SubscriptionProvider } from './context/SubscriptionContext';
-import { Layers, ShieldCheck, Database, Sparkles, ArrowRight } from 'lucide-react';
-import { defaultPersonas } from './data/mockData';
+import { Layers, ShieldCheck, Database } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -51,22 +50,6 @@ export default function App() {
     sessionStorage.removeItem('brightloop_user');
     setCurrentUser(null);
     setToken(null);
-  };
-
-  const enterDirectDemo = (personaIndex = 0) => {
-    const persona = defaultPersonas[personaIndex];
-    const demoUser = {
-      id: personaIndex + 1,
-      full_name: persona.name,
-      email: persona.email,
-      role: persona.role,
-      company_name: persona.company
-    };
-    const mockToken = 'mock_jwt_token_hackathon_demo';
-    localStorage.setItem('brightloop_token', mockToken);
-    localStorage.setItem('brightloop_user', JSON.stringify(demoUser));
-    setCurrentUser(demoUser);
-    setToken(mockToken);
   };
 
   if (checkingAuth) {
@@ -144,37 +127,7 @@ export default function App() {
       </header>
 
       {/* Main Container */}
-      <main style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
-        
-        {/* Instant Demo Launcher Card for Hackathon Judges */}
-        <div className="neu-flat animate-fade-in" style={{
-          width: '100%',
-          maxWidth: '520px',
-          padding: '20px 24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '12px',
-          border: '1px solid rgba(79, 70, 229, 0.25)'
-        }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase' }}>
-              <Sparkles size={14} /> Hackathon Judge Evaluation
-            </div>
-            <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-main)', marginTop: '2px' }}>
-              Instant Enterprise Demo Access
-            </div>
-          </div>
-          <button
-            onClick={() => enterDirectDemo(0)}
-            className="neu-btn-primary"
-            style={{ padding: '9px 18px', fontSize: '0.84rem' }}
-          >
-            Enter as Admin <ArrowRight size={14} />
-          </button>
-        </div>
-
+      <main style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
         {/* Authentication Card */}
         <div className="neu-flat animate-fade-in" style={{
           width: '100%',
