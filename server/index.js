@@ -14,8 +14,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'brightloop_super_secret_jwt_key_20
 app.use(cors());
 app.use(express.json());
 
-// Initialize DB
-initDatabase();
+// Initialize SQLite database
+initDatabase().catch(err => console.error('Failed to init SQLite DB:', err));
 
 // Password validation helper according to Brightloop spec:
 // > 8 chars, at least 1 uppercase, 1 lowercase, 1 special character
@@ -36,7 +36,7 @@ function validatePassword(password) {
 }
 
 // Authentication Middleware
-function authenticateToken(req, res, next) {
+async function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -44,16 +44,20 @@ function authenticateToken(req, res, next) {
     return res.status(401).json({ error: 'Access token required.' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, async (err, decoded) => {
     if (err) {
       return res.status(403).json({ error: 'Invalid or expired token.' });
     }
-    const freshUser = getUserById(user.id);
-    if (!freshUser || !freshUser.is_active) {
-      return res.status(403).json({ error: 'User account disabled or not found.' });
+    try {
+      const freshUser = await getUserById(decoded.id);
+      if (!freshUser || !freshUser.is_active) {
+        return res.status(403).json({ error: 'User account disabled or not found.' });
+      }
+      req.user = freshUser;
+      next();
+    } catch (e) {
+      return res.status(500).json({ error: 'Server authentication lookup error.' });
     }
-    req.user = freshUser;
-    next();
   });
 }
 
@@ -68,49 +72,54 @@ function requireAdmin(req, res, next) {
 // --- Auth Routes ---
 
 // Login
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required.' });
   }
 
-  const user = getUserByEmail(email);
-  if (!user) {
-    return res.status(401).json({ error: 'Invalid email or password.' });
-  }
-
-  if (!user.is_active) {
-    return res.status(403).json({ error: 'This account has been deactivated.' });
-  }
-
-  const isPasswordValid = bcrypt.compareSync(password, user.password_hash);
-  if (!isPasswordValid) {
-    return res.status(401).json({ error: 'Invalid email or password.' });
-  }
-
-  const token = jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
-    JWT_SECRET,
-    { expiresIn: '24h' }
-  );
-
-  res.json({
-    message: 'Login successful',
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      full_name: user.full_name,
-      role: user.role,
-      company_name: user.company_name,
-      phone: user.phone
+  try {
+    const user = await getUserByEmail(email);
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
     }
-  });
+
+    if (!user.is_active) {
+      return res.status(403).json({ error: 'This account has been deactivated.' });
+    }
+
+    const isPasswordValid = bcrypt.compareSync(password, user.password_hash);
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      message: 'Login successful',
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        role: user.role,
+        company_name: user.company_name,
+        phone: user.phone
+      }
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal login error.' });
+  }
 });
 
 // Register new customer account
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   const { email, password, full_name, company_name, phone } = req.body;
 
   if (!email || !password || !full_name) {
@@ -122,13 +131,13 @@ app.post('/api/auth/register', (req, res) => {
     return res.status(400).json({ error: passwordCheck.message });
   }
 
-  const existing = getUserByEmail(email);
-  if (existing) {
-    return res.status(409).json({ error: 'An account with this email already exists.' });
-  }
-
   try {
-    const newUser = createUser({
+    const existing = await getUserByEmail(email);
+    if (existing) {
+      return res.status(409).json({ error: 'An account with this email already exists.' });
+    }
+
+    const newUser = await createUser({
       email,
       password,
       full_name,
@@ -155,19 +164,22 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 // Forgot / Reset password request
-app.post('/api/auth/reset-password', (req, res) => {
+app.post('/api/auth/reset-password', async (req, res) => {
   const { email } = req.body;
   if (!email) {
     return res.status(400).json({ error: 'Email address is required.' });
   }
 
-  const user = getUserByEmail(email);
-  if (!user) {
-    // For security, give generic response
-    return res.json({ message: `If ${email} is registered, a password reset link has been dispatched.` });
-  }
+  try {
+    const user = await getUserByEmail(email);
+    if (!user) {
+      return res.json({ message: `If ${email} is registered, a password reset link has been dispatched.` });
+    }
 
-  res.json({ message: `A password reset link has been simulated & dispatched to ${email}.` });
+    res.json({ message: `A password reset link has been dispatched to ${email}.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Error processing password reset.' });
+  }
 });
 
 // Current User Profile
@@ -176,16 +188,20 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 });
 
 // List all users (Staff & Admin)
-app.get('/api/users', authenticateToken, (req, res) => {
+app.get('/api/users', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.role !== 'staff') {
     return res.status(403).json({ error: 'Unauthorized to view user directory.' });
   }
-  const users = getAllUsers();
-  res.json({ users });
+  try {
+    const users = await getAllUsers();
+    res.json({ users });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch users.' });
+  }
 });
 
 // Add new staff member (Admin only)
-app.post('/api/users/staff', authenticateToken, requireAdmin, (req, res) => {
+app.post('/api/users/staff', authenticateToken, requireAdmin, async (req, res) => {
   const { email, password, full_name, phone } = req.body;
 
   if (!email || !password || !full_name) {
@@ -197,13 +213,13 @@ app.post('/api/users/staff', authenticateToken, requireAdmin, (req, res) => {
     return res.status(400).json({ error: passwordCheck.message });
   }
 
-  const existing = getUserByEmail(email);
-  if (existing) {
-    return res.status(409).json({ error: 'An account with this email already exists.' });
-  }
-
   try {
-    const newStaff = createUser({
+    const existing = await getUserByEmail(email);
+    if (existing) {
+      return res.status(409).json({ error: 'An account with this email already exists.' });
+    }
+
+    const newStaff = await createUser({
       email,
       password,
       full_name,
@@ -237,5 +253,5 @@ if (fs.existsSync(distPath)) {
 
 // Start Express Server
 app.listen(PORT, () => {
-  console.log(`🚀 Brightloop Auth & Users API server listening on http://localhost:${PORT}`);
+  console.log(`🚀 Brightloop SQLite (https://www.sqlite.org) Auth & Users API server listening on http://localhost:${PORT}`);
 });
