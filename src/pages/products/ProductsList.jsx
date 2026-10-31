@@ -15,14 +15,12 @@ export default function ProductsList({ onSelectProduct }) {
   const [editingProduct, setEditingProduct] = useState(null);
 
   const handleCreateProduct = async (productData) => {
-    await addProduct(productData);
-    setShowCreateModal(false);
+    if (await addProduct(productData)) setShowCreateModal(false);
   };
 
   const handleUpdateProduct = async (productData) => {
     if (!editingProduct) return;
-    await updateProduct(editingProduct.id, productData);
-    setEditingProduct(null);
+    if (await updateProduct(editingProduct.id, productData)) setEditingProduct(null);
   };
 
   return (

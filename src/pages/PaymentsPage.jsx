@@ -84,7 +84,7 @@ export default function PaymentsPage() {
       <div className="neu-flat" style={{ padding: '24px 30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <span style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Scene 6: Money & Collections Management
+            PAYMENTS & COLLECTIONS
           </span>
           <h2 style={{ fontSize: '1.45rem', fontWeight: 800, marginTop: '4px', color: 'var(--text-main)' }}>
             Payments & Receivables Reconciliation

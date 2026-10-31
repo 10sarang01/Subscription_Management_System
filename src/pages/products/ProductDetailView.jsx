@@ -41,18 +41,15 @@ export default function ProductDetailView({ product, onBack }) {
   const activePlans = plans.filter(p => p.isActive);
 
   const handleUpdateProduct = async (productData) => {
-    await updateProduct(product.id, productData);
-    setShowEditProductModal(false);
+    if (await updateProduct(product.id, productData)) setShowEditProductModal(false);
   };
 
   const handleAddPlan = async (planData) => {
-    await addProductPlan(product.id, planData);
-    setShowPlanModal(false);
+    if (await addProductPlan(product.id, planData)) setShowPlanModal(false);
   };
 
   const handleEditPlan = async (planData) => {
-    await updateProductPlan(editingPlan.id, product.id, planData);
-    setEditingPlan(null);
+    if (await updateProductPlan(editingPlan.id, product.id, planData)) setEditingPlan(null);
   };
 
   const handleToggle = async (plan) => {
@@ -60,8 +57,7 @@ export default function ProductDetailView({ product, onBack }) {
   };
 
   const handleDeletePlan = async (planId) => {
-    await deleteProductPlan(planId, product.id);
-    setConfirmDeletePlan(null);
+    if (await deleteProductPlan(planId, product.id)) setConfirmDeletePlan(null);
   };
 
   return (
@@ -95,7 +91,7 @@ export default function ProductDetailView({ product, onBack }) {
                 <Edit3 size={14} /> Edit Product
               </button>
               <button
-                onClick={() => deleteProduct(product.id) && onBack()}
+                onClick={async () => { if (await deleteProduct(product.id)) onBack(); }}
                 className="neu-btn"
                 style={{ padding: '7px 12px', fontSize: '0.8rem', color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '5px' }}
               >

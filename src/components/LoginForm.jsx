@@ -271,10 +271,10 @@ export default function LoginForm({ onLoginSuccess, onForgotPassword }) {
           </button>
           <button
             type="button"
-            onClick={() => fillQuickDemo('alice@cornerbakery.com', 'Customer@BrightLoop2026!')}
+            onClick={() => fillQuickDemo('demo.customer@example.test', 'DemoCustomer@2026!')}
             className="neu-btn"
             style={{ padding: '8px 10px', fontSize: '0.76rem', borderRadius: '10px' }}
-            title="Alice Smith (Customer)"
+            title="Demo Customer"
           >
             🏢 Customer
           </button>

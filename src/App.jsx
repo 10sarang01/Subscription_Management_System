@@ -14,7 +14,7 @@ import CustomerPortalPage from './pages/CustomerPortalPage';
 import TeamPage from './pages/TeamPage';
 import { SubscriptionProvider } from './context/SubscriptionContext';
 import ThemeToggle from './components/ThemeToggle';
-import { Layers, ShieldCheck, Database } from 'lucide-react';
+import { Layers } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -194,29 +194,7 @@ export default function App() {
       )}
 
       {/* Footer Info */}
-      <footer style={{
-        marginTop: '32px',
-        textAlign: 'center',
-        fontSize: '0.82rem',
-        color: 'var(--text-muted)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '16px',
-        flexWrap: 'wrap',
-        justifyContent: 'center'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Database size={14} />
-          <span>Local SQLite: <strong>brightloop.db</strong></span>
-        </div>
-        <span>•</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <ShieldCheck size={14} />
-          <span>Admin Role Initialized: <strong>Elena Vance</strong></span>
-        </div>
-        <span>•</span>
-        <span>Neumorphic Enterprise Soft UI</span>
-      </footer>
+
     </div>
   );
 }

@@ -12,13 +12,7 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
 
   const [form, setForm] = useState(() => {
     if (product) {
-      const hasOdoo = Boolean(
-        product.hasOdooVariant ||
-        product.variants?.some(v => v.name.toLowerCase().includes('odoo'))
-      );
-      const customVars = (product.variants || [])
-        .filter(v => v.name !== 'Standard Edition' && !v.name.toLowerCase().includes('odoo'))
-        .map(v => ({ name: v.name, priceOffset: v.priceOffset }));
+      const customVars = (product.variants || []).map(v => ({ id: v.id, name: v.name, attributeName: v.attributeName, priceOffset: v.priceOffset }));
 
       return {
         name: product.name || '',
@@ -26,7 +20,6 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
         salesPrice: product.salesPrice !== undefined ? String(product.salesPrice) : '',
         costPrice: product.costPrice !== undefined ? String(product.costPrice) : '',
         notes: product.notes || '',
-        hasOdooBrand: hasOdoo,
         customVariants: customVars
       };
     }
@@ -36,7 +29,6 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
       salesPrice: '',
       costPrice: '',
       notes: '',
-      hasOdooBrand: false,
       customVariants: []
     };
   });
@@ -44,7 +36,7 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
   const [errors, setErrors] = useState({});
 
   const addCustomVariant = () =>
-    setForm(f => ({ ...f, customVariants: [...f.customVariants, { name: '', priceOffset: 0 }] }));
+    setForm(f => ({ ...f, customVariants: [...f.customVariants, { name: '', priceOffset: '' }] }));
 
   const updateCustomVariant = (i, field, value) => {
     const updated = [...form.customVariants];
@@ -77,8 +69,8 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
 
     for (let i = 0; i < form.customVariants.length; i++) {
       const cv = form.customVariants[i];
-      if (cv.priceOffset !== '' && parseFloat(cv.priceOffset) < 0) {
-        e.variants = 'Variant price offset cannot be negative.';
+      if (!cv.name.trim() || cv.priceOffset === '' || !Number.isFinite(Number(cv.priceOffset)) || Number(cv.priceOffset) < 0) {
+        e.variants = 'Each variant needs a name and a non-negative price offset.';
         break;
       }
     }
@@ -94,18 +86,11 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
     const sPrice = Math.max(0, parseFloat(form.salesPrice) || 0);
     const cPrice = Math.max(0, parseFloat(form.costPrice) || 0);
 
-    const variants = [{ name: 'Standard Edition', priceOffset: 0 }];
-    if (form.hasOdooBrand) {
-      variants.push({ name: 'Odoo Brand Edition', priceOffset: 560 });
-    }
-    form.customVariants.forEach(cv => {
-      if (cv.name.trim()) {
-        variants.push({
-          name: cv.name.trim(),
-          priceOffset: Math.max(0, parseFloat(cv.priceOffset) || 0)
-        });
-      }
-    });
+    const variants = form.customVariants.map((variant) => ({
+      ...variant,
+      name: variant.name.trim(),
+      priceOffset: Number(variant.priceOffset)
+    }));
 
     onSubmit({
       name: form.name.trim(),
@@ -113,8 +98,6 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
       salesPrice: sPrice,
       costPrice: cPrice,
       notes: form.notes.trim(),
-      hasOdooVariant: form.hasOdooBrand,
-      odooPriceOffset: 560,
       variants
     });
   };
@@ -176,7 +159,7 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
                 step="0.01"
                 min="0"
                 required
-                placeholder="2000.00"
+                placeholder="Enter sales price"
                 value={form.salesPrice}
                 onChange={e => {
                   const val = e.target.value;
@@ -196,7 +179,7 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
                 step="0.01"
                 min="0"
                 required
-                placeholder="850.00"
+                placeholder="Enter cost price"
                 value={form.costPrice}
                 onChange={e => {
                   const val = e.target.value;
@@ -223,25 +206,6 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
             />
           </div>
 
-          {/* Odoo Brand Variant */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <input
-              type="checkbox"
-              id="odooBrandCheckbox"
-              checked={form.hasOdooBrand}
-              onChange={e => setForm(f => ({ ...f, hasOdooBrand: e.target.checked }))}
-              style={{ accentColor: 'var(--primary)', width: '15px', height: '15px', cursor: 'pointer' }}
-            />
-            <label htmlFor="odooBrandCheckbox" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-main)', cursor: 'pointer' }}>
-              Odoo Brand Variant
-            </label>
-            {form.hasOdooBrand && (
-              <span style={{ fontSize: '0.78rem', color: '#5b21b6', fontWeight: 700 }}>
-                (+₹560 added to plan price for Odoo edition)
-              </span>
-            )}
-          </div>
-
           {/* Custom Variants */}
           <div style={{ borderTop: '1px solid rgba(184,194,204,0.3)', paddingTop: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -260,7 +224,7 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
 
             {form.customVariants.length === 0 ? (
               <p style={{ fontSize: '0.77rem', color: 'var(--text-muted)', background: 'rgba(184,194,204,0.1)', padding: '10px 12px', borderRadius: '8px' }}>
-                Standard Edition (+₹0) {form.hasOdooBrand ? 'and Odoo Brand Edition (+₹560) ' : ''}will be available for this product. Click <strong>+ Add Variant</strong> above to define additional custom editions.
+                No variants configured. Select <strong>+ Add Variant</strong> to add one.
               </p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

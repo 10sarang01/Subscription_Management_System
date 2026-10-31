@@ -67,7 +67,7 @@ export default function CustomerPortalPage() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span className="neu-pill pill-customer">Self-Service Portal</span>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>• Scene 1 & 2 Portal Experience</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>• Your account</span>
             </div>
             <h2 style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: '8px', color: 'var(--text-main)' }}>
               Welcome back, {currentPersona.name.split(' (')[0]}!

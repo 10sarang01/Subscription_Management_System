@@ -12,35 +12,34 @@ import {
   HelpCircle,
   Sliders,
   Sparkles,
-  Trash2,
-  Database
+  Trash2
 } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
 
 export default function DiscountsPage() {
-  const { discounts, products, createDiscount, toggleDiscountStatus, deleteDiscount, currentPersona } = useSubscription();
+  const { discounts, discountsLoading, discountsError, refreshDiscounts, products, createDiscount, toggleDiscountStatus, deleteDiscount, currentPersona } = useSubscription();
 
   const [showModal, setShowModal] = useState(false);
   const isAdmin = currentPersona.role === 'admin';
 
   // Simulator State
-  const [simSeats, setSimSeats] = useState(6);
-  const [simBasePrice, setSimBasePrice] = useState(240);
-  const [simDiscountCode, setSimDiscountCode] = useState(discounts[0]?.code || 'ENTERPRISE20');
+  const [simSeats, setSimSeats] = useState(1);
+  const [simProductId, setSimProductId] = useState('');
+  const [simDiscountCode, setSimDiscountCode] = useState('');
 
   // New Discount Form State
   const [discountForm, setDiscountForm] = useState({
     code: '',
     name: '',
     type: 'percentage', // percentage | fixed
-    value: 15,
+    value: '',
     scope: 'whole_subscription', // whole_subscription | specific_product
-    targetProductId: products[0]?.id || 'prod-1',
+    targetProductId: '',
     minQuantity: 1,
     minAmount: 0,
     startDate: new Date().toISOString().split('T')[0],
-    endDate: '2026-12-31',
-    usageLimit: 50
+    endDate: '',
+    usageLimit: ''
   });
 
   const handleCreateSubmit = async (e) => {
@@ -56,21 +55,21 @@ export default function DiscountsPage() {
       minAmount: parseFloat(discountForm.minAmount) || 0,
       startDate: discountForm.startDate,
       endDate: discountForm.endDate,
-      usageLimit: parseInt(discountForm.usageLimit) || 100
+      usageLimit: discountForm.usageLimit === '' ? null : Number(discountForm.usageLimit)
     });
     if (result) {
       setDiscountForm({
         code: '',
         name: '',
         type: 'percentage',
-        value: 15,
+        value: '',
         scope: 'whole_subscription',
-        targetProductId: products[0]?.id || 'prod-1',
+        targetProductId: '',
         minQuantity: 1,
         minAmount: 0,
         startDate: new Date().toISOString().split('T')[0],
-        endDate: '2026-12-31',
-        usageLimit: 50
+        endDate: '',
+        usageLimit: ''
       });
       setShowModal(false);
     }
@@ -79,7 +78,8 @@ export default function DiscountsPage() {
   // Run simulation calculation
   const selectedRule = discounts.find((d) => d.code === simDiscountCode);
   const numericSeats = simSeats === '' ? 0 : parseInt(simSeats, 10) || 0;
-  const numericBasePrice = simBasePrice === '' ? 0 : parseFloat(simBasePrice) || 0;
+  const simProduct = products.find((product) => String(product.id) === simProductId);
+  const numericBasePrice = Number(simProduct?.salesPrice) || 0;
   const subtotalBeforeDiscount = numericSeats * numericBasePrice;
   let simulatedDeduction = 0;
   let eligibilityMessage = 'Discount applied successfully!';
@@ -87,11 +87,20 @@ export default function DiscountsPage() {
 
   if (!selectedRule) {
     isEligible = false;
-    eligibilityMessage = 'Coupon code does not exist.';
+    eligibilityMessage = 'Select a discount rule.';
+  } else if (!simProduct) {
+    isEligible = false;
+    eligibilityMessage = 'Select a product to simulate.';
+  } else if (selectedRule.scope === 'specific_product' && String(selectedRule.targetProductId) !== simProductId) {
+    isEligible = false;
+    eligibilityMessage = 'This discount applies to a different product.';
+  } else if ((selectedRule.startDate && new Date().toISOString().slice(0, 10) < selectedRule.startDate) || (selectedRule.endDate && new Date().toISOString().slice(0, 10) > selectedRule.endDate)) {
+    isEligible = false;
+    eligibilityMessage = 'This discount is outside its validity period.';
   } else if (!selectedRule.isActive) {
     isEligible = false;
     eligibilityMessage = 'This discount rule is currently deactivated or expired.';
-  } else if (selectedRule.timesUsed >= selectedRule.usageLimit) {
+  } else if (selectedRule.usageLimit != null && selectedRule.timesUsed >= selectedRule.usageLimit) {
     isEligible = false;
     eligibilityMessage = 'Usage limit has been completely exhausted.';
   } else if (numericSeats < selectedRule.minQuantity) {
@@ -112,12 +121,14 @@ export default function DiscountsPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      {discountsLoading && <p role="status">Loading discount rules…</p>}
+      {discountsError && <div role="alert" className="neu-flat-sm" style={{ padding: '16px', color: 'var(--error-text)' }}>{discountsError} <button className="neu-btn" onClick={refreshDiscounts} style={{ padding: '6px 12px', marginLeft: '12px' }}>Retry</button></div>}
       
       {/* Top Banner */}
       <div className="neu-flat" style={{ padding: '24px 30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <span style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Scene 5: Discount & Pricing Engine
+            DISCOUNTS
           </span>
           <h2 style={{ fontSize: '1.45rem', fontWeight: 800, marginTop: '4px', color: 'var(--text-main)' }}>
             Automated Discount Rules & Coupons
@@ -170,6 +181,7 @@ export default function DiscountsPage() {
                 onChange={(e) => setSimDiscountCode(e.target.value)}
                 className="neu-inset neu-input"
               >
+                <option value="">Select a discount rule</option>
                 {discounts.map((d) => (
                   <option key={d.id} value={d.code}>
                     {d.code} — {d.name} ({d.type === 'percentage' ? `${d.value}%` : `₹${d.value}`} off)
@@ -197,18 +209,12 @@ export default function DiscountsPage() {
               </div>
               <div>
                 <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                  Base Price per Seat (₹)
+                  Product
                 </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={simBasePrice}
-                  onChange={(e) => setSimBasePrice(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
-                  onBlur={() => {
-                    if (simBasePrice === '') setSimBasePrice(0);
-                  }}
-                  className="neu-inset neu-input"
-                />
+                <select value={simProductId} onChange={(e) => setSimProductId(e.target.value)} className="neu-inset neu-input">
+                  <option value="">Select a product</option>
+                  {products.map((product) => <option key={product.id} value={product.id}>{product.name} — ₹{Number(product.salesPrice).toFixed(2)}</option>)}
+                </select>
               </div>
             </div>
 
@@ -291,7 +297,7 @@ export default function DiscountsPage() {
           </div>
 
           <div style={{ marginTop: '20px', padding: '12px', borderRadius: '10px', background: '#ede9fe', color: '#5b21b6', fontSize: '0.8rem', fontWeight: 600 }}>
-            👑 Admin Authority: Elena Vance is currently authorized to modify global rules.
+            Only administrators can modify discount rules.
           </div>
         </div>
 
@@ -303,9 +309,7 @@ export default function DiscountsPage() {
           <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0 }}>
             Configured Discount Rules ({discounts.length})
           </h3>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 700, padding: '4px 10px', borderRadius: '999px', background: 'rgba(34, 197, 94, 0.12)', color: '#16a34a' }}>
-            <Database size={13} /> Live SQLite Database
-          </span>
+
         </div>
 
         <div className="table-container">
@@ -323,8 +327,9 @@ export default function DiscountsPage() {
               </tr>
             </thead>
             <tbody>
+              {!discountsLoading && !discountsError && discounts.length === 0 && <tr><td colSpan={8}>No discount rules found.</td></tr>}
               {discounts.map((d) => {
-                const usagePercent = Math.min(100, Math.round(((d.timesUsed || 0) / (d.usageLimit || 1)) * 100));
+                const usagePercent = d.usageLimit == null ? 0 : Math.min(100, Math.round(((d.timesUsed || 0) / d.usageLimit) * 100));
                 const targetProd = d.targetProductId ? products.find((p) => p.id === d.targetProductId) : null;
                 const isExhausted = d.usageLimit && (d.timesUsed || 0) >= d.usageLimit;
                 const isPastEndDate = d.endDate && new Date().toISOString().split('T')[0] > d.endDate;
@@ -355,12 +360,12 @@ export default function DiscountsPage() {
                       {d.minAmount > 0 && <div>Min Spend: <strong>₹{d.minAmount}</strong></div>}
                     </td>
                     <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                      <div>{d.startDate}</div>
-                      <div>to {d.endDate}</div>
+                      <div>{d.startDate || 'No start date'}</div>
+                      <div>to {d.endDate || 'No end date'}</div>
                     </td>
                     <td style={{ minWidth: '160px' }}>
                       <div style={{ fontSize: '0.78rem', fontWeight: 700, display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span>{d.timesUsed || 0} / {d.usageLimit} redeemed</span>
+                        <span>{d.timesUsed || 0} / {d.usageLimit ?? 'Unlimited'} redeemed</span>
                         <span>{usagePercent}%</span>
                       </div>
                       <div style={{ height: '6px', background: '#cbd5e1', borderRadius: '999px', overflow: 'hidden' }}>
@@ -402,7 +407,7 @@ export default function DiscountsPage() {
                           </button>
                           <button
                             onClick={() => {
-                              if (window.confirm(`Delete discount rule "${d.code}" from database?`)) {
+                              if (window.confirm(`Delete discount rule "${d.code}" ?`)) {
                                 deleteDiscount(d.id);
                               }
                             }}
@@ -515,13 +520,14 @@ export default function DiscountsPage() {
               {discountForm.scope === 'specific_product' && (
                 <div>
                   <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
-                    Target Product for Line Deduction (Scene 5)
+                    Target product
                   </label>
                   <select
                     value={discountForm.targetProductId}
                     onChange={(e) => setDiscountForm({ ...discountForm, targetProductId: e.target.value })}
                     className="neu-inset neu-input"
                   >
+                    <option value="">Select a product</option>
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name} (₹{p.salesPrice})
@@ -564,7 +570,6 @@ export default function DiscountsPage() {
                   <input
                     type="number"
                     min="1"
-                    required
                     value={discountForm.usageLimit}
                     onChange={(e) => setDiscountForm({ ...discountForm, usageLimit: e.target.value })}
                     className="neu-inset neu-input"
@@ -579,7 +584,6 @@ export default function DiscountsPage() {
                   </label>
                   <input
                     type="date"
-                    required
                     value={discountForm.startDate}
                     onChange={(e) => setDiscountForm({ ...discountForm, startDate: e.target.value })}
                     className="neu-inset neu-input"
@@ -591,7 +595,6 @@ export default function DiscountsPage() {
                   </label>
                   <input
                     type="date"
-                    required
                     value={discountForm.endDate}
                     onChange={(e) => setDiscountForm({ ...discountForm, endDate: e.target.value })}
                     className="neu-inset neu-input"
