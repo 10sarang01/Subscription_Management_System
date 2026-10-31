@@ -28,6 +28,9 @@ import { useSubscription } from '../context/SubscriptionContext';
 export default function BillingPage() {
   const {
     invoices,
+    billingError,
+    billingLoading,
+    refreshBilling,
     subscriptions,
     runBillingDay,
     getDueSubscriptions,
@@ -90,17 +93,19 @@ export default function BillingPage() {
     setShowPaymentModal(true);
   };
 
-  const handleRecordPaymentSubmit = (e) => {
+  const handleRecordPaymentSubmit = async (e) => {
     e.preventDefault();
     if (!selectedInvoice) return;
-    recordPayment({
+    const recorded = await recordPayment({
       invoiceId: selectedInvoice.id,
       amount: parseFloat(paymentAmount),
       method: paymentMethod,
       note: 'Settled via Automated Billing Center'
     });
-    setShowPaymentModal(false);
-    setSelectedInvoice(null);
+    if (recorded) {
+      setShowPaymentModal(false);
+      setSelectedInvoice(null);
+    }
   };
 
   const getStatusBadge = (status) => {
@@ -122,6 +127,8 @@ export default function BillingPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '26px' }}>
+      {billingLoading && <p role="status">Loading billing data…</p>}
+      {billingError && <div role="alert" className="neu-flat-sm" style={{ padding: '16px', color: 'var(--error-text)' }}>{billingError} <button className="neu-btn" onClick={refreshBilling} style={{ padding: '6px 12px', marginLeft: '12px' }}>Retry</button></div>}
       
       {/* Hero Banner: Automated Billing Day Engine (Scene 4) */}
       <div className="neu-flat billing-hero" style={{
@@ -568,10 +575,7 @@ export default function BillingPage() {
 
                 {selectedInvoice.status === 'Draft' && (
                   <button
-                    onClick={() => {
-                      confirmInvoice(selectedInvoice.id);
-                      setSelectedInvoice({ ...selectedInvoice, status: 'Confirmed' });
-                    }}
+                    onClick={async () => { if (await confirmInvoice(selectedInvoice.id)) setSelectedInvoice(null); }}
                     className="neu-btn-primary"
                     style={{ padding: '8px 16px', fontSize: '0.84rem' }}
                   >
@@ -581,10 +585,7 @@ export default function BillingPage() {
 
                 {selectedInvoice.status !== 'Cancelled' && (
                   <button
-                    onClick={() => {
-                      sendInvoice(selectedInvoice.id);
-                      setSelectedInvoice({ ...selectedInvoice, sentAt: new Date().toISOString() });
-                    }}
+                    onClick={() => sendInvoice(selectedInvoice.id)}
                     className="neu-btn"
                     style={{ padding: '8px 16px', fontSize: '0.84rem', color: '#4f46e5' }}
                   >
@@ -604,10 +605,7 @@ export default function BillingPage() {
 
                 {selectedInvoice.status !== 'Paid' && selectedInvoice.status !== 'Cancelled' && (
                   <button
-                    onClick={() => {
-                      cancelInvoice(selectedInvoice.id);
-                      setSelectedInvoice({ ...selectedInvoice, status: 'Cancelled', balance: 0 });
-                    }}
+                    onClick={async () => { if (await cancelInvoice(selectedInvoice.id)) setSelectedInvoice(null); }}
                     className="neu-btn"
                     style={{ padding: '8px 14px', fontSize: '0.84rem', color: '#94a3b8' }}
                   >
@@ -808,7 +806,7 @@ export default function BillingPage() {
                   <option value="Credit Card (Stripe)">Credit Card (Stripe)</option>
                   <option value="Bank Wire / ACH">Bank Wire / ACH</option>
                   <option value="Direct Debit">Direct Debit</option>
-                  <option value="Corporate Check">Corporate Check</option>
+                  
                   <option value="Cash Settlement">Cash Settlement</option>
                   <option value="Online Customer Portal">Online Customer Portal</option>
                 </select>

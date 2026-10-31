@@ -31,7 +31,7 @@ Step 1 of the Brightloop Software Subscription Management platform: A local SQLi
    - Modern typography using *Plus Jakarta Sans*.
 
 4. **100% No Python**:
-   - Backend powered by **Node.js + Express** and **better-sqlite3** with JSON Web Tokens (JWT) and Bcrypt encryption.
+   - Backend powered by **Node.js + Express** and **sqlite3** with JSON Web Tokens (JWT) and Bcrypt encryption.
 
 ---
 

@@ -54,13 +54,8 @@ export default function CustomerPortalPage() {
     );
   };
 
-  const handlePayInvoice = (inv) => {
-    recordPayment({
-      invoiceId: inv.id,
-      amount: inv.balance,
-      method: 'Credit Card (Stripe Portal)',
-      note: 'Self-service online portal payment by customer'
-    });
+  const handlePayInvoice = () => {
+    showToast('Online payments are not configured yet.', 'error');
   };
 
   return (

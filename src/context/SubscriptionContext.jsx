@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   initialProducts,
   initialInvoices,
@@ -49,20 +49,17 @@ export function SubscriptionProvider({ children, initialUser }) {
   });
   const [subscriptionOptionsLoading, setSubscriptionOptionsLoading] = useState(true);
   const [subscriptionOptionsError, setSubscriptionOptionsError] = useState('');
-  const [invoices, setInvoices] = useState(() => {
-    const saved = localStorage.getItem('brightloop_invoices');
-    return saved ? JSON.parse(saved) : initialInvoices;
-  });
+  const [invoices, setInvoices] = useState([]);
+  const [billingError, setBillingError] = useState('');
+  const [billingLoading, setBillingLoading] = useState(true);
+  const paymentAttempts = useRef(new Map());
 
   const [discounts, setDiscounts] = useState(() => {
     const saved = localStorage.getItem('brightloop_discounts');
     return saved ? JSON.parse(saved) : initialDiscounts;
   });
 
-  const [payments, setPayments] = useState(() => {
-    const saved = localStorage.getItem('brightloop_payments');
-    return saved ? JSON.parse(saved) : initialPayments;
-  });
+  const [payments, setPayments] = useState([]);
 
   // Current active persona
   const [currentPersona, setCurrentPersona] = useState(() => {
@@ -130,17 +127,33 @@ export function SubscriptionProvider({ children, initialUser }) {
   }, [productPlans]);
 
 
-  useEffect(() => {
-    localStorage.setItem('brightloop_invoices', JSON.stringify(invoices));
-  }, [invoices]);
 
   useEffect(() => {
     localStorage.setItem('brightloop_discounts', JSON.stringify(discounts));
   }, [discounts]);
 
-  useEffect(() => {
-    localStorage.setItem('brightloop_payments', JSON.stringify(payments));
-  }, [payments]);
+
+  const billingRequest = async (url, options = {}) => {
+    const token = localStorage.getItem('brightloop_token') || sessionStorage.getItem('brightloop_token');
+    const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}`, ...options.headers } });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Billing request failed.');
+    return data;
+  };
+  const refreshBilling = useCallback(async () => {
+    setBillingLoading(true);
+    try {
+      const [invoiceData, paymentData] = await Promise.all([billingRequest('/api/invoices'), billingRequest('/api/payments')]);
+      setInvoices(invoiceData.invoices);
+      setPayments(paymentData.payments);
+      setBillingError('');
+      return true;
+    } catch (err) {
+      setBillingError(`Unable to load billing data: ${err.message}`);
+      return false;
+    } finally { setBillingLoading(false); }
+  }, []);
+  useEffect(() => { refreshBilling(); }, [refreshBilling]);
 
   // Fetch live discounts from SQLite database on mount
   const fetchDiscounts = useCallback(async () => {
@@ -611,204 +624,39 @@ export function SubscriptionProvider({ children, initialUser }) {
   };
 
   // Billing Day Engine: Scene 4 & Scene 5
-  const runBillingDay = (targetDateStr = new Date().toISOString().split('T')[0]) => {
-    const { due } = getDueSubscriptions(targetDateStr);
-    let generatedCount = 0;
-    let totalGeneratedAmount = 0;
-    const newInvoicesList = [];
-    const updatedSubIds = new Set();
-    const usedDiscountMap = {};
+  const runBillingDay = () => {
+    showToast('Billing runs are unavailable until subscriptions are connected to the database.', 'error');
+    return null;
+  };
 
-    due.forEach((sub) => {
-      let subtotal = 0;
-      let taxTotal = 0;
-
-      const invoiceItems = sub.items.map((item) => {
-        const qty = parseInt(item.quantity, 10) || 1;
-        const price = parseFloat(item.unitPrice) || 0;
-        const lineSubtotal = qty * price;
-        subtotal += lineSubtotal;
-        const taxRate = item.taxRate !== undefined ? item.taxRate : 0.10;
-        const lineTax = lineSubtotal * taxRate;
-        taxTotal += lineTax;
-        return {
-          productId: item.productId,
-          name: `${item.name} (${item.variant || 'Standard Edition'})`,
-          quantity: qty,
-          unitPrice: price,
-          taxRate,
-          taxAmount: lineTax,
-          total: lineSubtotal + lineTax
-        };
+  const updateInvoiceStatus = async (id, action) => {
+    try {
+      await billingRequest(`/api/invoices/${encodeURIComponent(id)}/actions/${action}`, { method: 'POST' });
+      await refreshBilling();
+      showToast(`Invoice ${action === 'confirm' ? 'confirmed' : 'cancelled'}.`, 'success');
+      return true;
+    } catch (err) { showToast(err.message, 'error'); return false; }
+  };
+  const confirmInvoice = (id) => updateInvoiceStatus(id, 'confirm');
+  const cancelInvoice = (id) => updateInvoiceStatus(id, 'cancel');
+  const sendInvoice = () => { showToast('Email delivery is not configured.', 'error'); };
+  const recordPayment = async ({ invoiceId, amount, method, note, transactionRef }) => {
+    const methods = { 'Credit Card (Stripe)': 'Credit Card', 'Bank Wire / ACH': 'Bank Transfer', 'Direct Debit': 'Direct Debit', 'Cash Settlement': 'Cash', 'Online Customer Portal': 'Online' };
+    if (!methods[method]) { showToast('This payment method is not supported.', 'error'); return false; }
+    const signature = JSON.stringify([invoiceId, amount, methods[method], note || '', transactionRef || '']);
+    if (!paymentAttempts.current.has(signature)) paymentAttempts.current.set(signature, crypto.randomUUID());
+    try {
+      await billingRequest(`/api/invoices/${encodeURIComponent(invoiceId)}/payments`, {
+        method: 'POST', headers: { 'Idempotency-Key': paymentAttempts.current.get(signature) },
+        body: JSON.stringify({ amount, method: methods[method], note: note || '', transactionRef: transactionRef || '' })
       });
 
-      let discountDeduction = 0;
-      let appliedDiscountRule = null;
-      if (sub.discountCode) {
-        const validation = validateDiscount({
-          code: sub.discountCode,
-          items: sub.items,
-          subtotal,
-          date: targetDateStr
-        });
-        if (validation.valid) {
-          discountDeduction = validation.deduction;
-          appliedDiscountRule = validation.rule;
-          usedDiscountMap[appliedDiscountRule.code] = (usedDiscountMap[appliedDiscountRule.code] || 0) + 1;
-        }
-      }
+      paymentAttempts.current.delete(signature);
+      const refreshed = await refreshBilling();
+      showToast(refreshed ? 'Payment recorded.' : 'Payment recorded, but billing data could not be refreshed.', refreshed ? 'success' : 'error');
+      return true;
+    } catch (err) { showToast(err.message, 'error'); return false; }
 
-      if (discountDeduction > 0 && subtotal > 0) {
-        const discountRatio = (subtotal - discountDeduction) / subtotal;
-        taxTotal = taxTotal * discountRatio;
-      }
-
-      const total = Math.max(0, subtotal - discountDeduction + taxTotal);
-      const dueDate = computeDueDate(targetDateStr, sub.paymentTerms);
-
-      const newInvoice = {
-        id: `inv-${Date.now()}-${generatedCount}`,
-        invoiceNumber: `INV-2026-${String(invoices.length + generatedCount + 1).padStart(3, '0')}`,
-        subscriptionNumber: sub.subNumber,
-        customerName: sub.customerName,
-        customerEmail: sub.customerEmail,
-        issueDate: targetDateStr,
-        dueDate,
-        billingPeriodStart: sub.nextBillingDate || targetDateStr,
-        billingPeriodEnd: advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency),
-        subtotal,
-        taxTotal,
-        discountAmount: discountDeduction,
-        discountCode: appliedDiscountRule ? appliedDiscountRule.code : null,
-        total,
-        amountPaid: 0,
-        balance: total,
-        status: 'Confirmed',
-        sentAt: null,
-        items: invoiceItems
-      };
-
-      newInvoicesList.push(newInvoice);
-      updatedSubIds.add(sub.id);
-      generatedCount++;
-      totalGeneratedAmount += total;
-    });
-
-    if (newInvoicesList.length > 0) {
-      setInvoices((prev) => [...newInvoicesList, ...prev]);
-
-      const billingDateUpdates = subscriptions
-        .filter((sub) => updatedSubIds.has(sub.id))
-        .map((sub) => ({
-          ...sub,
-          lastBillingDate: targetDateStr,
-          nextBillingDate: advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency)
-        }));
-      const updatedBillingById = new Map(billingDateUpdates.map((sub) => [sub.id, sub]));
-      setSubscriptions((prev) => prev.map((sub) => updatedBillingById.get(sub.id) || sub));
-      billingDateUpdates.forEach((sub) => {
-        void saveSubscriptionBillingDates(sub.id, {
-          lastBillingDate: sub.lastBillingDate,
-          nextBillingDate: sub.nextBillingDate
-        });
-      });
-
-      if (Object.keys(usedDiscountMap).length > 0) {
-        // Sync discount usage to live SQLite database
-        Object.entries(usedDiscountMap).forEach(([code, count]) => {
-          fetch('/api/discounts/use', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code, count })
-          }).catch((e) => console.warn('Could not record discount usage in database:', e));
-        });
-
-        setDiscounts((prev) =>
-          prev.map((d) => {
-            const count = usedDiscountMap[d.code];
-            if (count) {
-              const newTimesUsed = (d.timesUsed || 0) + count;
-              const hasRunOut = d.usageLimit && newTimesUsed >= d.usageLimit;
-              return {
-                ...d,
-                timesUsed: newTimesUsed,
-                isActive: hasRunOut ? false : d.isActive
-              };
-            }
-            return d;
-          })
-        );
-      }
-
-      showToast(
-        `⚡ Billing Day Run: ${newInvoicesList.length} invoices generated (${formatINR(totalGeneratedAmount)})! Next billing dates advanced.`,
-        'success'
-      );
-    } else {
-      showToast(
-        `All active subscriptions are up to date for ${targetDateStr}. No subscriptions due (Double-billing prevented)!`,
-        'info'
-      );
-    }
-
-    return { generatedCount, totalAmount: totalGeneratedAmount, invoices: newInvoicesList };
-  };
-
-  // ── Invoice Actions ───────────────────────────────────────────────────
-
-  const confirmInvoice = (invoiceId) => {
-    setInvoices((prev) =>
-      prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: 'Confirmed' } : inv))
-    );
-    showToast('Invoice confirmed and queued for collection.', 'success');
-  };
-
-  const cancelInvoice = (invoiceId) => {
-    setInvoices((prev) =>
-      prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: 'Cancelled' } : inv))
-    );
-    showToast('Invoice has been cancelled.', 'info');
-  };
-
-  const sendInvoice = (invoiceId) => {
-    setInvoices((prev) =>
-      prev.map((inv) => (inv.id === invoiceId ? { ...inv, sentAt: new Date().toISOString() } : inv))
-    );
-    showToast('Invoice PDF dispatched via email to customer.', 'success');
-  };
-
-  const recordPayment = ({ invoiceId, amount, method, note, transactionRef }) => {
-    const targetInvoice = invoices.find((inv) => inv.id === invoiceId);
-    if (!targetInvoice) return;
-
-    const paymentAmount = parseFloat(amount);
-    const newPaidTotal = (targetInvoice.amountPaid || 0) + paymentAmount;
-    const newBalance = Math.max(0, targetInvoice.total - newPaidTotal);
-    const newStatus = newBalance <= 0.01 ? 'Paid' : 'Partially Paid';
-
-    setInvoices((prev) =>
-      prev.map((inv) =>
-        inv.id === invoiceId
-          ? { ...inv, amountPaid: newPaidTotal, balance: newBalance, status: newStatus }
-          : inv
-      )
-    );
-
-    const newPayment = {
-      id: `pay-${Date.now()}`,
-      paymentNumber: `PAY-2026-${String(payments.length + 1).padStart(3, '0')}`,
-      invoiceNumber: targetInvoice.invoiceNumber,
-      customerName: targetInvoice.customerName,
-      date: new Date().toISOString().split('T')[0],
-      method: method || 'Credit Card (Stripe)',
-      amount: paymentAmount,
-      transactionRef: transactionRef || `TXN-${Math.floor(100000 + Math.random() * 900000)}`,
-      note: note || 'Payment recorded',
-      status: 'Completed'
-    };
-
-    setPayments((prev) => [newPayment, ...prev]);
-    showToast(`Payment of ${formatINR(paymentAmount)} recorded for ${targetInvoice.invoiceNumber}`, 'success');
   };
 
   // ── Discount Actions (Live SQLite Persistence) ─────────────────────────
@@ -917,9 +765,8 @@ export function SubscriptionProvider({ children, initialUser }) {
 
     setProducts([]);
     setProductPlans({});
-    setInvoices(initialInvoices);
-    setPayments(initialPayments);
     void refreshSubscriptions();
+    void refreshBilling();
 
     const refreshed = await fetchDiscounts();
     if (!refreshed || refreshed.length === 0) {
@@ -944,6 +791,9 @@ export function SubscriptionProvider({ children, initialUser }) {
         subscriptionOptionsError,
         refreshSubscriptionOptions,
         invoices,
+        billingError,
+        billingLoading,
+        refreshBilling,
         discounts,
         payments,
         currentPersona,

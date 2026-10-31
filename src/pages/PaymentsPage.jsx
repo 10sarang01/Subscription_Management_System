@@ -49,24 +49,24 @@ export default function PaymentsPage() {
       setSelectedInvoiceId('');
       setPaymentAmount('');
     }
-    setTransactionRef(`TXN-${Math.floor(100000 + Math.random() * 900000)}`);
+    setTransactionRef('');
     setPaymentNote('Settlement processed via Payments center');
     setShowModal(true);
   };
 
   const handleInvoiceChange = (invId) => {
     setSelectedInvoiceId(invId);
-    const target = unpaidInvoices.find((i) => i.id === invId);
+    const target = unpaidInvoices.find((i) => String(i.id) === String(invId));
     if (target) {
       setPaymentAmount(target.balance.toFixed(2));
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedInvoiceId) return;
 
-    recordPayment({
+    const recorded = await recordPayment({
       invoiceId: selectedInvoiceId,
       amount: parseFloat(paymentAmount),
       method: paymentMethod,
@@ -74,7 +74,7 @@ export default function PaymentsPage() {
       transactionRef
     });
 
-    setShowModal(false);
+    if (recorded) setShowModal(false);
   };
 
   return (
@@ -331,7 +331,7 @@ export default function PaymentsPage() {
                     <option value="Credit Card (Stripe)">Credit Card (Stripe)</option>
                     <option value="Bank Wire / ACH">Bank Wire / ACH</option>
                     <option value="Direct Debit">Direct Debit</option>
-                    <option value="Corporate Check">Corporate Check</option>
+                    
                     <option value="Cash Settlement">Cash Settlement</option>
                   </select>
                 </div>

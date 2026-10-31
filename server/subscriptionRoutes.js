@@ -15,19 +15,25 @@ const ALLOWED_TRANSITIONS = {
 
 // Brightloop already owns these tables. Add only fields needed by this feature
 // to that same database; never create a second database or parallel line table.
-function ensureColumn(table, column, definition) {
-  const exists = db.prepare(`PRAGMA table_info(${table})`).all()
-    .some((existingColumn) => existingColumn.name === column);
-  if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+async function ensureColumn(table, column, definition) {
+  const columns = await db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some((entry) => entry.name === column)) await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
-
-ensureColumn('subscriptions', 'quotation_validity_days', 'INTEGER NOT NULL DEFAULT 30');
-ensureColumn('subscriptions', 'quote_issued_at', 'DATE');
-ensureColumn('subscriptions', 'discount_code', 'TEXT');
-ensureColumn('subscriptions', 'currency_code', "TEXT NOT NULL DEFAULT 'INR'");
-ensureColumn('subscriptions', 'template_id', 'INTEGER REFERENCES quotation_templates(id) ON DELETE SET NULL');
-ensureColumn('subscription_lines', 'product_name_snapshot', 'TEXT');
-ensureColumn('subscription_lines', 'variant_name_snapshot', 'TEXT');
+let schemaReady;
+router.use(async (req, res, next) => {
+  try {
+    if (!schemaReady) schemaReady = (async () => {
+      await ensureColumn('subscriptions', 'quotation_validity_days', 'INTEGER NOT NULL DEFAULT 30');
+      await ensureColumn('subscriptions', 'quote_issued_at', 'DATE');
+      await ensureColumn('subscriptions', 'discount_code', 'TEXT');
+      await ensureColumn('subscriptions', 'currency_code', "TEXT NOT NULL DEFAULT 'INR'");
+      await ensureColumn('subscriptions', 'template_id', 'INTEGER REFERENCES quotation_templates(id) ON DELETE SET NULL');
+      await ensureColumn('subscription_lines', 'product_name_snapshot', 'TEXT');
+      await ensureColumn('subscription_lines', 'variant_name_snapshot', 'TEXT');
+    })().catch((err) => { schemaReady = null; throw err; });
+    await schemaReady; next();
+  } catch (err) { next(err); }
+});
 
 function httpError(status, message) {
   const error = new Error(message);
@@ -67,7 +73,7 @@ function parseJsonArray(value) {
   }
 }
 
-function getVariantRows(productId) {
+async function getVariantRows(productId) {
   return db.prepare(`
     SELECT id, attribute_name, attribute_value, extra_price
     FROM product_variants
@@ -76,8 +82,8 @@ function getVariantRows(productId) {
   `).all(productId);
 }
 
-function mapProductRow(row) {
-  const databaseVariants = getVariantRows(row.id);
+async function mapProductRow(row) {
+  const databaseVariants = await getVariantRows(row.id);
   const savedVariants = parseJsonArray(row.variants_json);
   const variants = savedVariants.length
     ? savedVariants.map((variant) => {
@@ -116,8 +122,8 @@ function mapProductRow(row) {
   };
 }
 
-function mapSubscriptionRow(row) {
-  const lines = db.prepare(`
+async function mapSubscriptionRow(row) {
+  const lines = (await db.prepare(`
     SELECT sl.id, sl.product_id, sl.variant_id, sl.quantity, sl.unit_price,
            sl.discount_amount, sl.tax_id, sl.tax_amount, sl.subtotal, sl.line_total,
            COALESCE(sl.product_name_snapshot, p.name) AS product_name,
@@ -129,7 +135,7 @@ function mapSubscriptionRow(row) {
     LEFT JOIN tax_rules t ON t.id = sl.tax_id
     WHERE sl.subscription_id = ?
     ORDER BY sl.id
-  `).all(row.id).map((line) => ({
+  `).all(row.id)).map((line) => ({
     id: String(line.id),
     productId: String(line.product_id),
     variantId: line.variant_id == null ? null : Number(line.variant_id),
@@ -183,16 +189,16 @@ const SUBSCRIPTION_SELECT = `
   JOIN subscription_plans p ON p.id = s.plan_id
 `;
 
-function getSubscriptionById(id) {
-  const row = db.prepare(`${SUBSCRIPTION_SELECT} WHERE s.id = ?`).get(id);
+async function getSubscriptionById(id) {
+  const row = await db.prepare(`${SUBSCRIPTION_SELECT} WHERE s.id = ?`).get(id);
   return row ? mapSubscriptionRow(row) : null;
 }
 
-function getSubscriptions(customerId = null) {
+async function getSubscriptions(customerId = null) {
   const rows = customerId == null
-    ? db.prepare(`${SUBSCRIPTION_SELECT} ORDER BY s.created_at DESC, s.id DESC`).all()
-    : db.prepare(`${SUBSCRIPTION_SELECT} WHERE s.customer_id = ? ORDER BY s.created_at DESC, s.id DESC`).all(customerId);
-  return rows.map(mapSubscriptionRow);
+    ? await db.prepare(`${SUBSCRIPTION_SELECT} ORDER BY s.created_at DESC, s.id DESC`).all()
+    : await db.prepare(`${SUBSCRIPTION_SELECT} WHERE s.customer_id = ? ORDER BY s.created_at DESC, s.id DESC`).all(customerId);
+  return Promise.all(rows.map(mapSubscriptionRow));
 }
 
 function mapDiscount(row) {
@@ -216,10 +222,10 @@ function mapDiscount(row) {
   };
 }
 
-function getSubscriptionOptions(user) {
+async function getSubscriptionOptions(user) {
   const isTeamMember = ['admin', 'staff'].includes(user.role);
   const customers = isTeamMember
-    ? db.prepare(`SELECT id, email, full_name, company_name FROM users WHERE role = 'customer' AND is_active = 1 ORDER BY company_name, full_name`).all()
+    ? (await db.prepare(`SELECT id, email, full_name, company_name FROM users WHERE role = 'customer' AND is_active = 1 ORDER BY company_name, full_name`).all())
       .map((customer) => ({
         id: String(customer.id),
         name: customer.company_name || customer.full_name,
@@ -227,21 +233,21 @@ function getSubscriptionOptions(user) {
       }))
     : [];
 
-  const products = db.prepare(`
+  const products = await Promise.all((await db.prepare(`
     SELECT p.*, COALESCE(t.rate, 0) AS tax_rate
     FROM products p
     LEFT JOIN tax_rules t ON t.id = p.tax_id
     WHERE COALESCE(p.is_active, 1) = 1
     ORDER BY p.name
-  `).all().map(mapProductRow);
+  `).all()).map(mapProductRow));
 
-  const plans = db.prepare(`
+  const plans = (await db.prepare(`
     SELECT id, name, code, billing_interval, base_price, minimum_quantity,
            start_date, end_date, allow_pause, allow_close_early, allow_renew
     FROM subscription_plans
     WHERE is_active = 1
     ORDER BY name
-  `).all().map((plan) => ({
+  `).all()).map((plan) => ({
     id: String(plan.id),
     name: plan.name,
     code: plan.code,
@@ -256,12 +262,12 @@ function getSubscriptionOptions(user) {
     isActive: true
   }));
 
-  const templates = db.prepare(`
+  const templates = await Promise.all((await db.prepare(`
     SELECT qt.id, qt.name, qt.plan_id, qt.validity_days, qt.notes
     FROM quotation_templates qt
     ORDER BY qt.id
-  `).all().map((template) => {
-    const items = db.prepare(`
+  `).all()).map(async (template) => {
+    const items = (await db.prepare(`
       SELECT qtl.id AS template_line_id, qtl.product_id, qtl.variant_id, qtl.quantity, qtl.unit_price,
              p.name AS product_name, COALESCE(pv.attribute_value, '') AS variant_name,
              p.tax_id, COALESCE(t.rate, 0) AS tax_rate
@@ -271,7 +277,7 @@ function getSubscriptionOptions(user) {
       LEFT JOIN tax_rules t ON t.id = p.tax_id
       WHERE qtl.template_id = ?
       ORDER BY qtl.id
-    `).all(template.id).map((line) => ({
+    `).all(template.id)).map((line) => ({
       productId: String(line.product_id),
       templateLineId: String(line.template_line_id),
       productName: line.product_name,
@@ -291,9 +297,9 @@ function getSubscriptionOptions(user) {
       notes: template.notes || '',
       items
     };
-  });
+  }));
 
-  const discounts = db.prepare('SELECT * FROM discount_rules ORDER BY code').all().map(mapDiscount);
+  const discounts = (await db.prepare('SELECT * FROM discount_rules ORDER BY code').all()).map(mapDiscount);
   return {
     customers,
     products,
@@ -304,9 +310,9 @@ function getSubscriptionOptions(user) {
   };
 }
 
-function nextDocumentNumber(prefix) {
+async function nextDocumentNumber(prefix) {
   const year = todayDateString().slice(0, 4);
-  const rows = db.prepare('SELECT subscription_number FROM subscriptions WHERE subscription_number LIKE ?')
+  const rows = await db.prepare('SELECT subscription_number FROM subscriptions WHERE subscription_number LIKE ?')
     .all(`${prefix}-${year}-%`);
   const pattern = new RegExp(`^${prefix}-${year}-(\\d+)$`);
   const highest = rows.reduce((max, row) => {
@@ -316,7 +322,7 @@ function nextDocumentNumber(prefix) {
   return `${prefix}-${year}-${String(highest + 1).padStart(4, '0')}`;
 }
 
-function findCustomer(input) {
+async function findCustomer(input) {
   if (input.customerId != null && String(input.customerId).trim()) {
     return db.prepare(`SELECT id, email, full_name, company_name FROM users WHERE id = ? AND role = 'customer' AND is_active = 1`)
       .get(input.customerId);
@@ -327,10 +333,10 @@ function findCustomer(input) {
     .get(email);
 }
 
-function findLineVariant(product, item) {
+async function findLineVariant(product, item) {
   const productId = String(product.id);
   if (item.variantId != null && String(item.variantId).trim()) {
-    const row = db.prepare(`
+    const row = await db.prepare(`
       SELECT id, product_id, attribute_value, extra_price
       FROM product_variants WHERE id = ? AND CAST(product_id AS TEXT) = ? AND is_active = 1
     `).get(item.variantId, productId);
@@ -343,7 +349,7 @@ function findLineVariant(product, item) {
     String(variant.name || variant.attributeValue || variant.value || '') === variantName
   );
   if (savedVariant) {
-    const dbVariant = db.prepare(`
+    const dbVariant = await db.prepare(`
       SELECT id, attribute_value, extra_price FROM product_variants
       WHERE CAST(product_id AS TEXT) = ? AND attribute_value = ? AND is_active = 1
       LIMIT 1
@@ -355,7 +361,7 @@ function findLineVariant(product, item) {
     };
   }
 
-  const dbVariant = db.prepare(`
+  const dbVariant = await db.prepare(`
     SELECT id, attribute_value, extra_price FROM product_variants
     WHERE CAST(product_id AS TEXT) = ? AND attribute_value = ? AND is_active = 1
     LIMIT 1
@@ -365,33 +371,33 @@ function findLineVariant(product, item) {
     : { id: null, name: variantName, priceOffset: 0 };
 }
 
-function normalizeItems(inputItems, discountAmount, templateId = null) {
+async function normalizeItems(inputItems, discountAmount, templateId = null) {
   if (!Array.isArray(inputItems) || inputItems.length === 0) {
     throw httpError(400, 'Add at least one product line to the quotation.');
   }
 
-  const items = inputItems.map((inputItem, index) => {
+  const items = await Promise.all(inputItems.map(async (inputItem, index) => {
     const productId = String(inputItem.productId || '').trim();
     const quantity = Number(inputItem.quantity);
     if (!productId) throw httpError(400, `Select a product for line ${index + 1}.`);
     if (!Number.isInteger(quantity) || quantity < 1) throw httpError(400, `Line ${index + 1} quantity must be a positive whole number.`);
 
-    const product = db.prepare(`
+    const product = await db.prepare(`
       SELECT id, name, sales_price, tax_id, variants_json, is_active
       FROM products WHERE CAST(id AS TEXT) = ?
     `).get(productId);
     if (!product || !product.is_active) throw httpError(400, `Product on line ${index + 1} is no longer available.`);
 
-    const variant = findLineVariant(product, inputItem);
+    const variant = await findLineVariant(product, inputItem);
     const templateLine = templateId && inputItem.templateLineId
-      ? db.prepare(`
+      ? await db.prepare(`
         SELECT unit_price FROM quotation_template_lines
         WHERE id = ? AND template_id = ? AND CAST(product_id AS TEXT) = CAST(? AS TEXT)
       `).get(inputItem.templateLineId, templateId, productId)
       : null;
     const tax = product.tax_id == null
       ? null
-      : db.prepare('SELECT id, rate FROM tax_rules WHERE id = ? AND is_active = 1').get(product.tax_id);
+      : await db.prepare('SELECT id, rate FROM tax_rules WHERE id = ? AND is_active = 1').get(product.tax_id);
     const unitPrice = roundMoney(templateLine
       ? Number(templateLine.unit_price)
       : (Number(product.sales_price) || 0) + variant.priceOffset);
@@ -407,7 +413,7 @@ function normalizeItems(inputItems, discountAmount, templateId = null) {
       taxRate: tax ? Number(tax.rate) / 100 : 0,
       lineSubtotal
     };
-  });
+  }));
 
   const subtotal = roundMoney(items.reduce((sum, item) => sum + item.lineSubtotal, 0));
   const discount = Number(discountAmount || 0);
@@ -437,14 +443,14 @@ function normalizeItems(inputItems, discountAmount, templateId = null) {
   };
 }
 
-function createSubscription(input, createdBy) {
+async function createSubscription(input, createdBy) {
   const data = input && typeof input === 'object' ? input : {};
-  const customer = findCustomer(data);
+  const customer = await findCustomer(data);
   if (!customer) throw httpError(400, 'Choose a customer account already stored in Brightloop.');
 
   const planId = Number(data.planId);
   if (!Number.isInteger(planId) || planId <= 0) throw httpError(400, 'Select a valid billing plan.');
-  const plan = db.prepare(`
+  const plan = await db.prepare(`
     SELECT id, name, billing_interval, is_active FROM subscription_plans WHERE id = ?
   `).get(planId);
   if (!plan || !plan.is_active) throw httpError(400, 'The selected billing plan is no longer active.');
@@ -464,15 +470,15 @@ function createSubscription(input, createdBy) {
 
   const today = todayDateString();
   const templateId = data.templateId == null || data.templateId === '' ? null : Number(data.templateId);
-  if (templateId != null && (!Number.isInteger(templateId) || !db.prepare('SELECT id FROM quotation_templates WHERE id = ?').get(templateId))) {
+  if (templateId != null && (!Number.isInteger(templateId) || !(await db.prepare('SELECT id FROM quotation_templates WHERE id = ?').get(templateId)))) {
     throw httpError(400, 'The selected quotation template was not found in Brightloop.');
   }
-  const undiscountedFinancials = normalizeItems(data.items, 0, templateId);
+  const undiscountedFinancials = await normalizeItems(data.items, 0, templateId);
   const discountCode = String(data.discountCode || '').trim().toUpperCase() || null;
   let discountAmount = 0;
   let discountRule = null;
   if (discountCode) {
-    discountRule = db.prepare('SELECT * FROM discount_rules WHERE code = ? COLLATE NOCASE').get(discountCode);
+    discountRule = await db.prepare('SELECT * FROM discount_rules WHERE code = ? COLLATE NOCASE').get(discountCode);
     if (!discountRule || !discountRule.is_active) throw httpError(400, 'The selected discount is not active in Brightloop.');
     if (discountRule.start_date && today < discountRule.start_date) throw httpError(400, 'The selected discount is not active yet.');
     if (discountRule.end_date && today > discountRule.end_date) throw httpError(400, 'The selected discount has expired.');
@@ -499,16 +505,15 @@ function createSubscription(input, createdBy) {
     throw httpError(400, 'A discount code is required to apply a quotation discount.');
   }
 
-  const financials = normalizeItems(data.items, discountAmount, templateId);
+  const financials = await normalizeItems(data.items, discountAmount, templateId);
   const quoteValidUntil = isValidDateString(data.quoteValidUntil)
     ? data.quoteValidUntil
     : addDays(today, validityDays);
   const quoteIssuedAt = status === 'Quotation' ? today : null;
-  db.exec('BEGIN IMMEDIATE TRANSACTION');
-  try {
+  return db.transaction(async () => {
     const prefix = status === 'Quotation' ? 'QT' : 'QT';
-    const subscriptionNumber = nextDocumentNumber(prefix);
-    const header = db.prepare(`
+    const subscriptionNumber = await nextDocumentNumber(prefix);
+    const header = await db.prepare(`
       INSERT INTO subscriptions (
         subscription_number, customer_id, plan_id, status, payment_terms,
         start_date, expiry_date, next_billing_date, quotation_valid_until,
@@ -544,7 +549,7 @@ function createSubscription(input, createdBy) {
         product_name_snapshot, variant_name_snapshot
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    financials.items.forEach((item) => insertLine.run(
+    for (const item of financials.items) await insertLine.run(
       Number(header.lastInsertRowid),
       item.productId,
       item.variantId,
@@ -558,28 +563,23 @@ function createSubscription(input, createdBy) {
       item.lineTotal,
       item.productName,
       item.variantName
-    ));
+    );
 
     if (discountRule && financials.discountTotal > 0) {
-        db.prepare('INSERT OR IGNORE INTO subscription_discounts (subscription_id, discount_id) VALUES (?, ?)')
+        await db.prepare('INSERT OR IGNORE INTO subscription_discounts (subscription_id, discount_id) VALUES (?, ?)')
           .run(Number(header.lastInsertRowid), Number(discountRule.id));
     }
 
-    db.exec('COMMIT');
     return getSubscriptionById(Number(header.lastInsertRowid));
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
+  });
 }
 
-function updateSubscriptionStatus(id, newStatus) {
+async function updateSubscriptionStatus(id, newStatus) {
   const subscriptionId = Number(id);
   if (!Number.isInteger(subscriptionId) || subscriptionId <= 0) throw httpError(400, 'Subscription id is invalid.');
 
-  db.exec('BEGIN IMMEDIATE TRANSACTION');
-  try {
-    const current = db.prepare('SELECT * FROM subscriptions WHERE id = ?').get(subscriptionId);
+  return db.transaction(async () => {
+    const current = await db.prepare('SELECT * FROM subscriptions WHERE id = ?').get(subscriptionId);
     if (!current) throw httpError(404, 'Subscription not found.');
     const allowed = ALLOWED_TRANSITIONS[current.status];
     if (!allowed || !allowed.has(newStatus)) {
@@ -591,7 +591,7 @@ function updateSubscriptionStatus(id, newStatus) {
     const nextPrefix = ['Draft', 'Quotation'].includes(newStatus) || rejectedQuote ? 'QT' : 'SUB';
     const currentPrefix = String(current.subscription_number || '').split('-')[0];
     const newNumber = reissued || currentPrefix !== nextPrefix
-      ? nextDocumentNumber(nextPrefix)
+      ? await nextDocumentNumber(nextPrefix)
       : current.subscription_number;
 
     let quoteIssuedAt = current.quote_issued_at;
@@ -603,27 +603,23 @@ function updateSubscriptionStatus(id, newStatus) {
       quoteValidUntil = addDays(today, days);
     }
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE subscriptions
       SET subscription_number = ?, status = ?, quote_issued_at = ?,
           quotation_valid_until = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(newNumber, newStatus, quoteIssuedAt, quoteValidUntil, subscriptionId);
-    db.exec('COMMIT');
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
-  return getSubscriptionById(subscriptionId);
+    return getSubscriptionById(subscriptionId);
+  });
 }
 
-function updateBillingDates(id, body) {
+async function updateBillingDates(id, body) {
   const subscriptionId = Number(id);
   const { lastBillingDate, nextBillingDate } = body || {};
   if (!isValidDateString(lastBillingDate) || !isValidDateString(nextBillingDate)) {
     throw httpError(400, 'Billing dates are invalid.');
   }
-  const result = db.prepare(`
+  const result = await db.prepare(`
     UPDATE subscriptions
     SET last_billing_date = ?, next_billing_date = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
@@ -639,20 +635,20 @@ function requireTeamMember(req, res, next) {
   next();
 }
 
-router.get('/options', (req, res) => {
+router.get('/options', async (req, res) => {
   try {
-    res.json(getSubscriptionOptions(req.user));
+    res.json(await getSubscriptionOptions(req.user));
   } catch (error) {
     console.error('Fetch subscription options error:', error);
     res.status(500).json({ error: 'Failed to load customers, products, plans, and quotation templates from Brightloop.' });
   }
 });
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const subscriptions = ['admin', 'staff'].includes(req.user?.role)
-      ? getSubscriptions()
-      : getSubscriptions(req.user?.id);
+      ? await getSubscriptions()
+      : await getSubscriptions(req.user?.id);
     res.json({ subscriptions });
   } catch (error) {
     console.error('Fetch subscriptions error:', error);
@@ -660,9 +656,9 @@ router.get('/', (req, res) => {
   }
 });
 
-router.post('/', requireTeamMember, (req, res) => {
+router.post('/', requireTeamMember, async (req, res) => {
   try {
-    const subscription = createSubscription(req.body, req.user.id);
+    const subscription = await createSubscription(req.body, req.user.id);
     res.status(201).json({ subscription });
   } catch (error) {
     console.error('Create subscription error:', error);
@@ -670,20 +666,20 @@ router.post('/', requireTeamMember, (req, res) => {
   }
 });
 
-router.patch('/:id/status', requireTeamMember, (req, res) => {
+router.patch('/:id/status', requireTeamMember, async (req, res) => {
   try {
     const { status } = req.body || {};
     if (typeof status !== 'string') return res.status(400).json({ error: 'A new subscription status is required.' });
-    res.json({ subscription: updateSubscriptionStatus(req.params.id, status) });
+    res.json({ subscription: await updateSubscriptionStatus(req.params.id, status) });
   } catch (error) {
     console.error('Update subscription status error:', error);
     res.status(error.status || 500).json({ error: error.status ? error.message : 'Failed to update the subscription status.' });
   }
 });
 
-router.patch('/:id/billing-dates', requireTeamMember, (req, res) => {
+router.patch('/:id/billing-dates', requireTeamMember, async (req, res) => {
   try {
-    res.json({ subscription: updateBillingDates(req.params.id, req.body) });
+    res.json({ subscription: await updateBillingDates(req.params.id, req.body) });
   } catch (error) {
     console.error('Update subscription billing dates error:', error);
     res.status(error.status || 500).json({ error: error.status ? error.message : 'Failed to save billing dates.' });
