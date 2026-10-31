@@ -12,6 +12,7 @@ const {
   createUser,
   getAllProducts,
   createProduct,
+  updateProduct,
   deleteProduct,
   getAllPlans,
   createPlan,
@@ -276,12 +277,24 @@ app.post('/api/products', async (req, res) => {
     return res.status(400).json({ error: 'Product name, sales price, and cost price are required.' });
   }
 
+  if (parseFloat(salesPrice) < 0 || parseFloat(costPrice) < 0) {
+    return res.status(400).json({ error: 'Product sales price and cost price cannot be negative.' });
+  }
+
+  if (variants && Array.isArray(variants)) {
+    for (const v of variants) {
+      if (v.priceOffset !== undefined && parseFloat(v.priceOffset) < 0) {
+        return res.status(400).json({ error: 'Variant price offset cannot be negative.' });
+      }
+    }
+  }
+
   try {
     const product = await createProduct({
       name,
       type: type || 'Software',
-      salesPrice,
-      costPrice,
+      salesPrice: Math.max(0, parseFloat(salesPrice) || 0),
+      costPrice: Math.max(0, parseFloat(costPrice) || 0),
       notes,
       hasOdooVariant,
       odooPriceOffset: odooPriceOffset || 560,
@@ -291,6 +304,47 @@ app.post('/api/products', async (req, res) => {
   } catch (err) {
     console.error('Create product error:', err);
     res.status(500).json({ error: 'Failed to create product.' });
+  }
+});
+
+// Update product (details & variants)
+app.put('/api/products/:id', async (req, res) => {
+  const { name, type, salesPrice, costPrice, notes, hasOdooVariant, odooPriceOffset, variants } = req.body;
+
+  if (salesPrice !== undefined && parseFloat(salesPrice) < 0) {
+    return res.status(400).json({ error: 'Product sales price cannot be negative.' });
+  }
+  if (costPrice !== undefined && parseFloat(costPrice) < 0) {
+    return res.status(400).json({ error: 'Product cost price cannot be negative.' });
+  }
+  if (variants && Array.isArray(variants)) {
+    for (const v of variants) {
+      if (v.priceOffset !== undefined && parseFloat(v.priceOffset) < 0) {
+        return res.status(400).json({ error: 'Variant price offset cannot be negative.' });
+      }
+    }
+  }
+
+  try {
+    const updated = await updateProduct(req.params.id, {
+      name,
+      type,
+      salesPrice,
+      costPrice,
+      notes,
+      hasOdooVariant,
+      odooPriceOffset,
+      variants
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Product not found.' });
+    }
+
+    res.json({ message: 'Product updated successfully.', product: updated });
+  } catch (err) {
+    console.error('Update product error:', err);
+    res.status(500).json({ error: 'Failed to update product.' });
   }
 });
 
@@ -394,11 +448,22 @@ app.put('/api/plans/:planId', authenticateToken, requireAdmin, async (req, res) 
     description
   } = req.body;
 
+  if (price !== undefined && parseFloat(price) < 0) {
+    return res.status(400).json({ error: 'Plan price cannot be negative.' });
+  }
+
   try {
     const updated = await updateProductPlan(planId, {
-      name, price, billingInterval, minimumQuantity,
-      availableFrom, availableUntil,
-      autoClose, allowEarlyClose, allowPause, allowRenew,
+      name,
+      price: price !== undefined ? Math.max(0, parseFloat(price) || 0) : undefined,
+      billingInterval,
+      minimumQuantity,
+      availableFrom,
+      availableUntil,
+      autoClose,
+      allowEarlyClose,
+      allowPause,
+      allowRenew,
       description
     });
 

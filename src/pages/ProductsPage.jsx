@@ -67,8 +67,11 @@ function PlanFormModal({ product, editingPlan, onSubmit, onClose }) {
   const validate = () => {
     const e = {};
     if (!form.name.trim()) e.name = 'Plan name is required.';
-    if (form.price === '' || isNaN(parseFloat(form.price))) e.price = 'Valid price is required.';
-    if (parseFloat(form.price) < 0) e.price = 'Price cannot be negative.';
+    if (form.price === '' || isNaN(parseFloat(form.price))) {
+      e.price = 'Valid price is required.';
+    } else if (parseFloat(form.price) < 0) {
+      e.price = 'Price cannot be negative.';
+    }
     if (!form.availableFrom) e.availableFrom = 'Start date is required.';
     if (!form.availableUntil) e.availableUntil = 'End date is required.';
     if (form.availableFrom && form.availableUntil && form.availableFrom >= form.availableUntil) {
@@ -83,10 +86,11 @@ function PlanFormModal({ product, editingPlan, onSubmit, onClose }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!validate()) return;
+    if (parseFloat(form.price) < 0) return;
     onSubmit({
       ...form,
-      price: parseFloat(form.price),
-      minimumQuantity: parseInt(form.minimumQuantity) || 1
+      price: Math.max(0, parseFloat(form.price)),
+      minimumQuantity: Math.max(1, parseInt(form.minimumQuantity) || 1)
     });
   };
 
@@ -147,7 +151,13 @@ function PlanFormModal({ product, editingPlan, onSubmit, onClose }) {
                   min="0"
                   placeholder="2000.00"
                   value={form.price}
-                  onChange={e => set('price', e.target.value)}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val === '' || parseFloat(val) >= 0) {
+                      set('price', val);
+                    }
+                  }}
+                  onKeyDown={e => ['-', '+', 'e', 'E'].includes(e.key) && e.preventDefault()}
                   className="neu-inset neu-input"
                   style={{ paddingLeft: '26px' }}
                 />
@@ -177,7 +187,13 @@ function PlanFormModal({ product, editingPlan, onSubmit, onClose }) {
                 type="number"
                 min="1"
                 value={form.minimumQuantity}
-                onChange={e => set('minimumQuantity', e.target.value)}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val === '' || parseInt(val) >= 1) {
+                    set('minimumQuantity', val);
+                  }
+                }}
+                onKeyDown={e => ['-', '+', 'e', 'E'].includes(e.key) && e.preventDefault()}
                 className="neu-inset neu-input"
               />
             </div>
@@ -294,6 +310,316 @@ function PlanFormModal({ product, editingPlan, onSubmit, onClose }) {
   );
 }
 
+// ─── Product Form Modal (Create & Edit) ───────────────────────────────────────
+
+function ProductFormModal({ product, onSubmit, onClose }) {
+  const isEditing = Boolean(product);
+
+  const [form, setForm] = useState(() => {
+    if (product) {
+      const hasOdoo = Boolean(
+        product.hasOdooVariant ||
+        product.variants?.some(v => v.name.toLowerCase().includes('odoo'))
+      );
+      const customVars = (product.variants || [])
+        .filter(v => v.name !== 'Standard Edition' && !v.name.toLowerCase().includes('odoo'))
+        .map(v => ({ name: v.name, priceOffset: v.priceOffset }));
+
+      return {
+        name: product.name || '',
+        type: product.type || 'Software',
+        salesPrice: product.salesPrice !== undefined ? String(product.salesPrice) : '',
+        costPrice: product.costPrice !== undefined ? String(product.costPrice) : '',
+        notes: product.notes || '',
+        hasOdooBrand: hasOdoo,
+        customVariants: customVars
+      };
+    }
+    return {
+      name: '',
+      type: 'Software',
+      salesPrice: '',
+      costPrice: '',
+      notes: '',
+      hasOdooBrand: false,
+      customVariants: []
+    };
+  });
+
+  const [errors, setErrors] = useState({});
+
+  const addCustomVariant = () =>
+    setForm(f => ({ ...f, customVariants: [...f.customVariants, { name: '', priceOffset: 0 }] }));
+
+  const updateCustomVariant = (i, field, value) => {
+    const updated = [...form.customVariants];
+    if (field === 'priceOffset') {
+      if (value === '') {
+        updated[i][field] = '';
+      } else {
+        const p = parseFloat(value);
+        updated[i][field] = isNaN(p) ? 0 : Math.max(0, p);
+      }
+    } else {
+      updated[i][field] = value;
+    }
+    setForm(f => ({ ...f, customVariants: updated }));
+  };
+
+  const removeCustomVariant = (i) =>
+    setForm(f => ({ ...f, customVariants: f.customVariants.filter((_, idx) => idx !== i) }));
+
+  const validate = () => {
+    const e = {};
+    if (!form.name.trim()) e.name = 'Product name is required.';
+    const sPrice = parseFloat(form.salesPrice);
+    if (form.salesPrice === '' || isNaN(sPrice)) e.salesPrice = 'Sales price is required.';
+    else if (sPrice < 0) e.salesPrice = 'Sales price cannot be negative.';
+
+    const cPrice = parseFloat(form.costPrice);
+    if (form.costPrice === '' || isNaN(cPrice)) e.costPrice = 'Cost price is required.';
+    else if (cPrice < 0) e.costPrice = 'Cost price cannot be negative.';
+
+    for (let i = 0; i < form.customVariants.length; i++) {
+      const cv = form.customVariants[i];
+      if (cv.priceOffset !== '' && parseFloat(cv.priceOffset) < 0) {
+        e.variants = 'Variant price offset cannot be negative.';
+        break;
+      }
+    }
+
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!validate()) return;
+
+    const sPrice = Math.max(0, parseFloat(form.salesPrice) || 0);
+    const cPrice = Math.max(0, parseFloat(form.costPrice) || 0);
+
+    const variants = [{ name: 'Standard Edition', priceOffset: 0 }];
+    if (form.hasOdooBrand) {
+      variants.push({ name: 'Odoo Brand Edition', priceOffset: 560 });
+    }
+    form.customVariants.forEach(cv => {
+      if (cv.name.trim()) {
+        variants.push({
+          name: cv.name.trim(),
+          priceOffset: Math.max(0, parseFloat(cv.priceOffset) || 0)
+        });
+      }
+    });
+
+    onSubmit({
+      name: form.name.trim(),
+      type: form.type,
+      salesPrice: sPrice,
+      costPrice: cPrice,
+      notes: form.notes.trim(),
+      hasOdooVariant: form.hasOdooBrand,
+      odooPriceOffset: 560,
+      variants
+    });
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card animate-fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
+          <div style={{
+            width: '36px', height: '36px', borderRadius: '10px',
+            background: 'linear-gradient(135deg, var(--primary), #6366f1)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff'
+          }}>
+            {isEditing ? <Edit3 size={18} /> : <Package size={18} />}
+          </div>
+          <div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>
+              {isEditing ? 'Edit Product Details & Variants' : 'Create New Product'}
+            </h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              {isEditing ? `Modifying "${product.name}"` : 'You can add billing plans after creating the product.'}
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>
+              Product Name *
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. CRM Software, Inventory Management..."
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              className="neu-inset neu-input"
+            />
+            {errors.name && <p style={{ color: 'var(--error)', fontSize: '0.75rem', marginTop: '3px' }}>{errors.name}</p>}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+            <div>
+              <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>Type</label>
+              <select
+                value={form.type}
+                onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+                className="neu-inset neu-input"
+              >
+                <option value="Software">Software</option>
+                <option value="Add-on">Add-on</option>
+                <option value="Service">Service</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>Sales Price (₹) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                placeholder="2000.00"
+                value={form.salesPrice}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val === '' || parseFloat(val) >= 0) {
+                    setForm(f => ({ ...f, salesPrice: val }));
+                  }
+                }}
+                onKeyDown={e => ['-', '+', 'e', 'E'].includes(e.key) && e.preventDefault()}
+                className="neu-inset neu-input"
+              />
+              {errors.salesPrice && <p style={{ color: 'var(--error)', fontSize: '0.75rem', marginTop: '3px' }}>{errors.salesPrice}</p>}
+            </div>
+            <div>
+              <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>Cost Price (₹) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                placeholder="850.00"
+                value={form.costPrice}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val === '' || parseFloat(val) >= 0) {
+                    setForm(f => ({ ...f, costPrice: val }));
+                  }
+                }}
+                onKeyDown={e => ['-', '+', 'e', 'E'].includes(e.key) && e.preventDefault()}
+                className="neu-inset neu-input"
+              />
+              {errors.costPrice && <p style={{ color: 'var(--error)', fontSize: '0.75rem', marginTop: '3px' }}>{errors.costPrice}</p>}
+            </div>
+          </div>
+
+          <div>
+            <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>Notes</label>
+            <textarea
+              rows="2"
+              placeholder="Product description, licensing specs, SLA..."
+              value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              className="neu-inset neu-input"
+              style={{ resize: 'none' }}
+            />
+          </div>
+
+          {/* Odoo Brand Variant */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <input
+              type="checkbox"
+              id="odooBrandCheckbox"
+              checked={form.hasOdooBrand}
+              onChange={e => setForm(f => ({ ...f, hasOdooBrand: e.target.checked }))}
+              style={{ accentColor: 'var(--primary)', width: '15px', height: '15px', cursor: 'pointer' }}
+            />
+            <label htmlFor="odooBrandCheckbox" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-main)', cursor: 'pointer' }}>
+              Odoo Brand Variant
+            </label>
+            {form.hasOdooBrand && (
+              <span style={{ fontSize: '0.78rem', color: '#5b21b6', fontWeight: 700 }}>
+                (+₹560 added to plan price for Odoo edition)
+              </span>
+            )}
+          </div>
+
+          {/* Custom Variants */}
+          <div style={{ borderTop: '1px solid rgba(184,194,204,0.3)', paddingTop: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <div>
+                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                  Product Variants
+                </label>
+                <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                  Define custom editions or tiers with additional price offsets.
+                </p>
+              </div>
+              <button type="button" onClick={addCustomVariant} className="neu-btn" style={{ padding: '4px 10px', fontSize: '0.76rem' }}>
+                + Add Variant
+              </button>
+            </div>
+
+            {form.customVariants.length === 0 ? (
+              <p style={{ fontSize: '0.77rem', color: 'var(--text-muted)', background: 'rgba(184,194,204,0.1)', padding: '10px 12px', borderRadius: '8px' }}>
+                Standard Edition (+₹0) {form.hasOdooBrand ? 'and Odoo Brand Edition (+₹560) ' : ''}will be available for this product. Click <strong>+ Add Variant</strong> above to define additional custom editions.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {form.customVariants.map((v, i) => (
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr auto', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      placeholder="Variant Name (e.g. Enterprise Edition)"
+                      value={v.name}
+                      onChange={e => updateCustomVariant(i, 'name', e.target.value)}
+                      className="neu-inset neu-input"
+                      style={{ padding: '8px 12px', fontSize: '0.82rem' }}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Price Offset (+₹)"
+                      value={v.priceOffset}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === '' || parseFloat(val) >= 0) {
+                          updateCustomVariant(i, 'priceOffset', val);
+                        }
+                      }}
+                      onKeyDown={e => ['-', '+', 'e', 'E'].includes(e.key) && e.preventDefault()}
+                      className="neu-inset neu-input"
+                      style={{ padding: '8px 12px', fontSize: '0.82rem' }}
+                    />
+                    <button type="button" onClick={() => removeCustomVariant(i)} className="neu-btn" style={{ padding: '8px', color: 'var(--error)' }} title="Remove variant">
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {errors.variants && <p style={{ color: 'var(--error)', fontSize: '0.75rem', marginTop: '5px' }}>{errors.variants}</p>}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
+            <button type="button" onClick={onClose} className="neu-btn" style={{ padding: '10px 18px' }}>
+              Cancel
+            </button>
+            <button type="submit" className="neu-btn-primary" style={{ padding: '10px 22px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Save size={15} />
+              {isEditing ? 'Save Changes' : 'Create Product'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── Product Detail View ──────────────────────────────────────────────────────
 
 function ProductDetailView({ product, onBack }) {
@@ -304,6 +630,7 @@ function ProductDetailView({ product, onBack }) {
     toggleProductPlan,
     deleteProductPlan,
     deleteProduct,
+    updateProduct,
     currentPersona
   } = useSubscription();
 
@@ -312,9 +639,15 @@ function ProductDetailView({ product, onBack }) {
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
   const [confirmDeletePlan, setConfirmDeletePlan] = useState(null);
+  const [showEditProductModal, setShowEditProductModal] = useState(false);
 
   const plans = getPlansForProduct(product.id);
   const activePlans = plans.filter(p => p.isActive);
+
+  const handleUpdateProduct = async (productData) => {
+    await updateProduct(product.id, productData);
+    setShowEditProductModal(false);
+  };
 
   const handleAddPlan = async (planData) => {
     await addProductPlan(product.id, planData);
@@ -356,13 +689,23 @@ function ProductDetailView({ product, onBack }) {
             </div>
           </div>
           {isAdmin && (
-            <button
-              onClick={() => deleteProduct(product.id) && onBack()}
-              className="neu-btn"
-              style={{ padding: '7px 12px', fontSize: '0.8rem', color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '5px' }}
-            >
-              <Trash2 size={14} /> Delete Product
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                onClick={() => setShowEditProductModal(true)}
+                className="neu-btn"
+                style={{ padding: '7px 14px', fontSize: '0.8rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '5px' }}
+                title="Edit Product Details & Variants"
+              >
+                <Edit3 size={14} /> Edit Product
+              </button>
+              <button
+                onClick={() => deleteProduct(product.id) && onBack()}
+                className="neu-btn"
+                style={{ padding: '7px 12px', fontSize: '0.8rem', color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '5px' }}
+              >
+                <Trash2 size={14} /> Delete Product
+              </button>
+            </div>
           )}
         </div>
 
@@ -395,6 +738,18 @@ function ProductDetailView({ product, onBack }) {
       {/* ── Details Tab ── */}
       {activeTab === 'details' && (
         <div className="neu-flat" style={{ padding: '24px 28px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 800 }}>General Information</h3>
+            {isAdmin && (
+              <button
+                onClick={() => setShowEditProductModal(true)}
+                className="neu-btn"
+                style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--primary)' }}
+              >
+                <Edit3 size={13} /> Edit Details
+              </button>
+            )}
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
             {[
               { label: 'Product Name', value: product.name },
@@ -425,28 +780,48 @@ function ProductDetailView({ product, onBack }) {
       {/* ── Variants Tab ── */}
       {activeTab === 'variants' && (
         <div className="neu-flat" style={{ padding: '24px 28px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
             <div>
               <h3 style={{ fontSize: '1rem', fontWeight: 800 }}>Product Variants</h3>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                 Each variant adds to the base plan price when a customer subscribes.
               </p>
             </div>
-            {product.variants?.length > 0 && (
-              <span style={{
-                fontSize: '0.75rem', fontWeight: 700, padding: '4px 10px',
-                borderRadius: '999px', background: 'rgba(79,70,229,0.1)', color: 'var(--primary)'
-              }}>
-                {product.variants.length} variant{product.variants.length !== 1 ? 's' : ''}
-              </span>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {product.variants?.length > 0 && (
+                <span style={{
+                  fontSize: '0.75rem', fontWeight: 700, padding: '4px 10px',
+                  borderRadius: '999px', background: 'rgba(79,70,229,0.1)', color: 'var(--primary)'
+                }}>
+                  {product.variants.length} variant{product.variants.length !== 1 ? 's' : ''}
+                </span>
+              )}
+              {isAdmin && (
+                <button
+                  onClick={() => setShowEditProductModal(true)}
+                  className="neu-btn"
+                  style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--primary)' }}
+                >
+                  <Edit3 size={13} /> Edit Variants
+                </button>
+              )}
+            </div>
           </div>
 
           {(!product.variants || product.variants.length === 0) ? (
             <div className="neu-inset-sm" style={{ padding: '48px', textAlign: 'center', borderRadius: '16px' }}>
               <Tag size={32} style={{ color: 'var(--text-muted)', margin: '0 auto 12px', display: 'block' }} />
               <p style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-muted)' }}>No variants defined for this product.</p>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>Variants are added during product creation.</p>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>Variants are added during product creation or edit.</p>
+              {isAdmin && (
+                <button
+                  onClick={() => setShowEditProductModal(true)}
+                  className="neu-btn-primary"
+                  style={{ padding: '8px 16px', fontSize: '0.82rem', marginTop: '14px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                >
+                  <Edit3 size={14} /> Add Variants
+                </button>
+              )}
             </div>
           ) : (
             <div style={{
@@ -722,6 +1097,15 @@ function ProductDetailView({ product, onBack }) {
         </div>
       )}
 
+      {/* Product Edit Modal */}
+      {showEditProductModal && (
+        <ProductFormModal
+          product={product}
+          onSubmit={handleUpdateProduct}
+          onClose={() => setShowEditProductModal(false)}
+        />
+      )}
+
       {/* Plan Form Modal */}
       {(showPlanModal || editingPlan) && (
         <PlanFormModal
@@ -759,46 +1143,20 @@ function ProductDetailView({ product, onBack }) {
 // ─── Products List View ───────────────────────────────────────────────────────
 
 function ProductsList({ onSelectProduct }) {
-  const { products, addProduct, deleteProduct, getPlansForProduct, currentPersona } = useSubscription();
+  const { products, addProduct, updateProduct, getPlansForProduct, currentPersona } = useSubscription();
   const isAdmin = currentPersona.role === 'admin';
-  const [showProductModal, setShowProductModal] = useState(false);
-  const [productForm, setProductForm] = useState(EMPTY_PRODUCT_FORM);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
 
-  const addCustomVariant = () =>
-    setProductForm(f => ({ ...f, customVariants: [...f.customVariants, { name: '', priceOffset: 0 }] }));
-
-  const updateCustomVariant = (i, field, value) => {
-    const updated = [...productForm.customVariants];
-    updated[i][field] = field === 'priceOffset' ? parseFloat(value) || 0 : value;
-    setProductForm(f => ({ ...f, customVariants: updated }));
+  const handleCreateProduct = async (productData) => {
+    await addProduct(productData);
+    setShowCreateModal(false);
   };
 
-  const removeCustomVariant = (i) =>
-    setProductForm(f => ({ ...f, customVariants: f.customVariants.filter((_, idx) => idx !== i) }));
-
-  const handleProductSubmit = async (e) => {
-    e.preventDefault();
-    const variants = [{ name: 'Standard Edition', priceOffset: 0 }];
-    if (productForm.hasOdooBrand) {
-      variants.push({ name: 'Odoo Brand Edition', priceOffset: 560 });
-    }
-    productForm.customVariants.forEach(cv => {
-      if (cv.name.trim()) variants.push({ name: cv.name.trim(), priceOffset: parseFloat(cv.priceOffset) || 0 });
-    });
-
-    await addProduct({
-      name: productForm.name,
-      type: productForm.type,
-      salesPrice: parseFloat(productForm.salesPrice) || 0,
-      costPrice: parseFloat(productForm.costPrice) || 0,
-      notes: productForm.notes,
-      hasOdooVariant: productForm.hasOdooBrand,
-      odooPriceOffset: 560,
-      variants
-    });
-
-    setProductForm(EMPTY_PRODUCT_FORM);
-    setShowProductModal(false);
+  const handleUpdateProduct = async (productData) => {
+    if (!editingProduct) return;
+    await updateProduct(editingProduct.id, productData);
+    setEditingProduct(null);
   };
 
   return (
@@ -808,12 +1166,12 @@ function ProductsList({ onSelectProduct }) {
         <div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)' }}>Products &amp; Plans</h2>
           <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginTop: '3px' }}>
-            Each product has its own independent billing plans. Click a product to manage its plans.
+            Each product has its own independent billing plans. Click a product to manage its plans and variants.
           </p>
         </div>
         {isAdmin && (
           <button
-            onClick={() => setShowProductModal(true)}
+            onClick={() => setShowCreateModal(true)}
             className="neu-btn-primary"
             style={{ padding: '10px 18px', fontSize: '0.86rem', display: 'flex', alignItems: 'center', gap: '7px' }}
           >
@@ -834,7 +1192,7 @@ function ProductsList({ onSelectProduct }) {
               Create your first product, then add subscription plans to it. Each product can have multiple independent plans.
             </p>
             {isAdmin && (
-              <button onClick={() => setShowProductModal(true)} className="neu-btn-primary" style={{ padding: '11px 24px', display: 'flex', alignItems: 'center', gap: '7px', margin: '0 auto' }}>
+              <button onClick={() => setShowCreateModal(true)} className="neu-btn-primary" style={{ padding: '11px 24px', display: 'flex', alignItems: 'center', gap: '7px', margin: '0 auto' }}>
                 <Plus size={16} /> Create First Product
               </button>
             )}
@@ -883,8 +1241,8 @@ function ProductsList({ onSelectProduct }) {
                     </div>
                   </div>
 
-                  {/* Plan count badge */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {/* Plan count badge & Edit button */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Plans</div>
                       <div style={{ fontWeight: 800, fontSize: '1.1rem', color: activePlans.length > 0 ? 'var(--primary)' : 'var(--text-muted)' }}>
@@ -892,6 +1250,20 @@ function ProductsList({ onSelectProduct }) {
                         <span style={{ fontSize: '0.72rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '3px' }}>active</span>
                       </div>
                     </div>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingProduct(product);
+                        }}
+                        className="neu-btn"
+                        style={{ padding: '7px 11px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--primary)' }}
+                        title="Edit Product Details & Variants"
+                      >
+                        <Edit3 size={13} /> Edit
+                      </button>
+                    )}
                     <ChevronRight size={18} style={{ color: 'var(--text-muted)' }} />
                   </div>
                 </div>
@@ -902,154 +1274,20 @@ function ProductsList({ onSelectProduct }) {
       </div>
 
       {/* Create Product Modal */}
-      {showProductModal && (
-        <div className="modal-overlay" onClick={() => setShowProductModal(false)}>
-          <div className="modal-card animate-fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
-              <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, var(--primary), #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-                <Package size={18} />
-              </div>
-              <div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>Create New Product</h3>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>You can add billing plans after creating the product.</p>
-              </div>
-            </div>
+      {showCreateModal && (
+        <ProductFormModal
+          onSubmit={handleCreateProduct}
+          onClose={() => setShowCreateModal(false)}
+        />
+      )}
 
-            <form onSubmit={handleProductSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>Product Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. CRM Software, Inventory Management..."
-                  value={productForm.name}
-                  onChange={e => setProductForm(f => ({ ...f, name: e.target.value }))}
-                  className="neu-inset neu-input"
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                <div>
-                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>Type</label>
-                  <select
-                    value={productForm.type}
-                    onChange={e => setProductForm(f => ({ ...f, type: e.target.value }))}
-                    className="neu-inset neu-input"
-                  >
-                    <option value="Software">Software</option>
-                    <option value="Add-on">Add-on</option>
-                    <option value="Service">Service</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>Sales Price (₹) *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    placeholder="2000.00"
-                    value={productForm.salesPrice}
-                    onChange={e => setProductForm(f => ({ ...f, salesPrice: e.target.value }))}
-                    className="neu-inset neu-input"
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>Cost Price (₹) *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    placeholder="850.00"
-                    value={productForm.costPrice}
-                    onChange={e => setProductForm(f => ({ ...f, costPrice: e.target.value }))}
-                    className="neu-inset neu-input"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>Notes</label>
-                <textarea
-                  rows="2"
-                  placeholder="Product description, licensing specs, SLA..."
-                  value={productForm.notes}
-                  onChange={e => setProductForm(f => ({ ...f, notes: e.target.value }))}
-                  className="neu-inset neu-input"
-                  style={{ resize: 'none' }}
-                />
-              </div>
-
-              {/* Odoo Brand Variant */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <input
-                  type="checkbox"
-                  id="odooBrandCheckbox"
-                  checked={productForm.hasOdooBrand}
-                  onChange={e => setProductForm(f => ({ ...f, hasOdooBrand: e.target.checked }))}
-                  style={{ accentColor: 'var(--primary)', width: '15px', height: '15px', cursor: 'pointer' }}
-                />
-                <label htmlFor="odooBrandCheckbox" style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-main)', cursor: 'pointer' }}>
-                  Odoo Brand Variant
-                </label>
-                {productForm.hasOdooBrand && (
-                  <span style={{ fontSize: '0.78rem', color: '#5b21b6', fontWeight: 700 }}>
-                    (+₹560 added to plan price for Odoo edition)
-                  </span>
-                )}
-              </div>
-
-              {/* Custom Variants */}
-              <div style={{ borderTop: '1px solid rgba(184,194,204,0.3)', paddingTop: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                    Additional Custom Variants (optional)
-                  </label>
-                  <button type="button" onClick={addCustomVariant} className="neu-btn" style={{ padding: '4px 10px', fontSize: '0.76rem' }}>
-                    + Add Variant
-                  </button>
-                </div>
-                {productForm.customVariants.length === 0 ? (
-                  <p style={{ fontSize: '0.77rem', color: 'var(--text-muted)' }}>
-                    Standard Edition (+₹0) {productForm.hasOdooBrand ? 'and Odoo Brand Edition (+₹560) ' : ''}will be created by default.
-                  </p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {productForm.customVariants.map((v, i) => (
-                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr auto', gap: '8px', alignItems: 'center' }}>
-                        <input
-                          type="text"
-                          placeholder="Variant Name"
-                          value={v.name}
-                          onChange={e => updateCustomVariant(i, 'name', e.target.value)}
-                          className="neu-inset neu-input"
-                          style={{ padding: '8px 12px', fontSize: '0.82rem' }}
-                        />
-                        <input
-                          type="number"
-                          placeholder="Price Offset (+₹)"
-                          value={v.priceOffset}
-                          onChange={e => updateCustomVariant(i, 'priceOffset', e.target.value)}
-                          className="neu-inset neu-input"
-                          style={{ padding: '8px 12px', fontSize: '0.82rem' }}
-                        />
-                        <button type="button" onClick={() => removeCustomVariant(i)} className="neu-btn" style={{ padding: '8px', color: 'var(--error)' }}>
-                          <X size={13} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
-                <button type="button" onClick={() => setShowProductModal(false)} className="neu-btn" style={{ padding: '10px 18px' }}>Cancel</button>
-                <button type="submit" className="neu-btn-primary" style={{ padding: '10px 22px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Save size={15} /> Create Product
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Edit Product Modal */}
+      {editingProduct && (
+        <ProductFormModal
+          product={editingProduct}
+          onSubmit={handleUpdateProduct}
+          onClose={() => setEditingProduct(null)}
+        />
       )}
     </div>
   );
@@ -1058,17 +1296,20 @@ function ProductsList({ onSelectProduct }) {
 // ─── Main ProductsPage Export ─────────────────────────────────────────────────
 
 export default function ProductsPage() {
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const { products } = useSubscription();
+  const [selectedProductId, setSelectedProductId] = useState(null);
+
+  const selectedProduct = products.find(p => p.id === selectedProductId) || null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
       {selectedProduct ? (
         <ProductDetailView
           product={selectedProduct}
-          onBack={() => setSelectedProduct(null)}
+          onBack={() => setSelectedProductId(null)}
         />
       ) : (
-        <ProductsList onSelectProduct={setSelectedProduct} />
+        <ProductsList onSelectProduct={(p) => setSelectedProductId(p.id)} />
       )}
     </div>
   );

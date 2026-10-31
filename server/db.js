@@ -177,6 +177,14 @@ async function getAllProducts() {
 
 async function createProduct({ id, name, type, salesPrice, costPrice, notes, hasOdooVariant = false, odooPriceOffset = 560, variants = [] }) {
   const prodId = id || `prod-${Date.now()}`;
+  const validSalesPrice = Math.max(0, parseFloat(salesPrice) || 0);
+  const validCostPrice = Math.max(0, parseFloat(costPrice) || 0);
+  const validOdooOffset = Math.max(0, parseFloat(odooPriceOffset) || 0);
+  const sanitizedVariants = (variants || []).map(v => ({
+    ...v,
+    priceOffset: Math.max(0, parseFloat(v.priceOffset) || 0)
+  }));
+
   const stmt = db.prepare(`
     INSERT INTO products (id, name, type, sales_price, cost_price, notes, has_odoo_variant, odoo_price_offset, variants_json)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -185,30 +193,92 @@ async function createProduct({ id, name, type, salesPrice, costPrice, notes, has
     prodId,
     name.trim(),
     type,
-    parseFloat(salesPrice) || 0,
-    parseFloat(costPrice) || 0,
+    validSalesPrice,
+    validCostPrice,
     notes || '',
     hasOdooVariant ? 1 : 0,
-    parseFloat(odooPriceOffset) || 560,
-    JSON.stringify(variants)
+    validOdooOffset,
+    JSON.stringify(sanitizedVariants)
   );
 
   return {
     id: prodId,
     name,
     type,
-    salesPrice: parseFloat(salesPrice) || 0,
-    costPrice: parseFloat(costPrice) || 0,
+    salesPrice: validSalesPrice,
+    costPrice: validCostPrice,
     notes: notes || '',
     hasOdooVariant: Boolean(hasOdooVariant),
-    odooPriceOffset: parseFloat(odooPriceOffset) || 560,
-    variants
+    odooPriceOffset: validOdooOffset,
+    variants: sanitizedVariants
   };
 }
 
 async function deleteProduct(id) {
   // Cascade delete removes product_plans automatically (ON DELETE CASCADE)
   return db.prepare('DELETE FROM products WHERE id = ?').run(id);
+}
+
+async function updateProduct(id, { name, type, salesPrice, costPrice, notes, hasOdooVariant, odooPriceOffset = 560, variants }) {
+  const allowedCols = [];
+  const values = [];
+
+  if (name !== undefined) {
+    allowedCols.push('name = ?');
+    values.push(name.trim());
+  }
+  if (type !== undefined) {
+    allowedCols.push('type = ?');
+    values.push(type);
+  }
+  if (salesPrice !== undefined) {
+    allowedCols.push('sales_price = ?');
+    values.push(Math.max(0, parseFloat(salesPrice) || 0));
+  }
+  if (costPrice !== undefined) {
+    allowedCols.push('cost_price = ?');
+    values.push(Math.max(0, parseFloat(costPrice) || 0));
+  }
+  if (notes !== undefined) {
+    allowedCols.push('notes = ?');
+    values.push(notes || '');
+  }
+  if (hasOdooVariant !== undefined) {
+    allowedCols.push('has_odoo_variant = ?');
+    values.push(hasOdooVariant ? 1 : 0);
+  }
+  if (odooPriceOffset !== undefined) {
+    allowedCols.push('odoo_price_offset = ?');
+    values.push(Math.max(0, parseFloat(odooPriceOffset) || 0));
+  }
+  if (variants !== undefined) {
+    const sanitizedVariants = (variants || []).map(v => ({
+      ...v,
+      priceOffset: Math.max(0, parseFloat(v.priceOffset) || 0)
+    }));
+    allowedCols.push('variants_json = ?');
+    values.push(JSON.stringify(sanitizedVariants));
+  }
+
+  if (allowedCols.length === 0) return null;
+  values.push(id);
+
+  db.prepare(`UPDATE products SET ${allowedCols.join(', ')} WHERE id = ?`).run(...values);
+
+  const r = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+  if (!r) return null;
+
+  return {
+    id: r.id,
+    name: r.name,
+    type: r.type,
+    salesPrice: r.sales_price,
+    costPrice: r.cost_price,
+    notes: r.notes || '',
+    hasOdooVariant: Boolean(r.has_odoo_variant),
+    odooPriceOffset: r.odoo_price_offset,
+    variants: r.variants_json ? JSON.parse(r.variants_json) : []
+  };
 }
 
 // ─── Legacy global plans (kept for backward compatibility) ─────────────────
@@ -322,6 +392,7 @@ async function createProductPlan({
   description = ''
 }) {
   const planId = `pp-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const validPrice = Math.max(0, parseFloat(price) || 0);
   const stmt = db.prepare(`
     INSERT INTO product_plans
       (id, product_id, name, price, billing_interval, minimum_quantity,
@@ -333,9 +404,9 @@ async function createProductPlan({
     planId,
     productId,
     name.trim(),
-    parseFloat(price) || 0,
+    validPrice,
     billingInterval,
-    parseInt(minimumQuantity) || 1,
+    Math.max(1, parseInt(minimumQuantity) || 1),
     availableFrom,
     availableUntil,
     autoClose ? 1 : 0,
@@ -375,7 +446,13 @@ async function updateProductPlan(planId, updates) {
       setClauses.push(`${dbCol} = ?`);
       // Coerce booleans to integers for SQLite
       let val = updates[jsKey];
-      if (typeof val === 'boolean') val = val ? 1 : 0;
+      if (jsKey === 'price') {
+        val = Math.max(0, parseFloat(val) || 0);
+      } else if (jsKey === 'minimumQuantity') {
+        val = Math.max(1, parseInt(val) || 1);
+      } else if (typeof val === 'boolean') {
+        val = val ? 1 : 0;
+      }
       values.push(val);
     }
   }
@@ -411,6 +488,7 @@ module.exports = {
   createUser,
   getAllProducts,
   createProduct,
+  updateProduct,
   deleteProduct,
   getAllPlans,
   createPlan,

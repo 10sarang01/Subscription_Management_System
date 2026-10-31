@@ -95,12 +95,22 @@ export function SubscriptionProvider({ children, initialUser }) {
   // ── Product Actions ───────────────────────────────────────────────────
 
   const addProduct = async (newProduct) => {
+    const cleanProduct = {
+      ...newProduct,
+      salesPrice: Math.max(0, parseFloat(newProduct.salesPrice) || 0),
+      costPrice: Math.max(0, parseFloat(newProduct.costPrice) || 0),
+      variants: (newProduct.variants || []).map(v => ({
+        ...v,
+        priceOffset: Math.max(0, parseFloat(v.priceOffset) || 0)
+      }))
+    };
+
     let savedProduct = null;
     try {
       const res = await fetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newProduct)
+        body: JSON.stringify(cleanProduct)
       });
       if (res.ok) {
         const data = await res.json();
@@ -111,7 +121,7 @@ export function SubscriptionProvider({ children, initialUser }) {
     }
 
     if (!savedProduct) {
-      savedProduct = { ...newProduct, id: `prod-${Date.now()}` };
+      savedProduct = { ...cleanProduct, id: `prod-${Date.now()}` };
     }
 
     setProducts((prev) => [savedProduct, ...prev.filter(p => p.id !== savedProduct.id)]);
@@ -135,6 +145,44 @@ export function SubscriptionProvider({ children, initialUser }) {
       return next;
     });
     showToast('Product and its plans removed.', 'info');
+  };
+
+  const updateProduct = async (id, updates) => {
+    const cleanUpdates = {
+      ...updates,
+      ...(updates.salesPrice !== undefined ? { salesPrice: Math.max(0, parseFloat(updates.salesPrice) || 0) } : {}),
+      ...(updates.costPrice !== undefined ? { costPrice: Math.max(0, parseFloat(updates.costPrice) || 0) } : {}),
+      ...(updates.variants ? {
+        variants: updates.variants.map(v => ({
+          ...v,
+          priceOffset: Math.max(0, parseFloat(v.priceOffset) || 0)
+        }))
+      } : {})
+    };
+
+    let updatedProduct = null;
+    try {
+      const res = await fetch(`/api/products/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanUpdates)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        updatedProduct = data.product;
+      }
+    } catch {
+      // offline
+    }
+
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        return updatedProduct || { ...p, ...cleanUpdates };
+      })
+    );
+    showToast(`Product "${cleanUpdates.name || 'details'}" updated successfully!`, 'success');
+    return updatedProduct;
   };
 
   // ── Product-scoped Plan Actions ───────────────────────────────────────
@@ -168,6 +216,12 @@ export function SubscriptionProvider({ children, initialUser }) {
    * Add a new plan to a product
    */
   const addProductPlan = async (productId, planData, authToken) => {
+    const cleanPlan = {
+      ...planData,
+      price: Math.max(0, parseFloat(planData.price) || 0),
+      minimumQuantity: Math.max(1, parseInt(planData.minimumQuantity) || 1)
+    };
+
     let savedPlan = null;
     try {
       const headers = {
@@ -177,7 +231,7 @@ export function SubscriptionProvider({ children, initialUser }) {
       const res = await fetch(`/api/products/${productId}/plans`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(planData)
+        body: JSON.stringify(cleanPlan)
       });
       if (res.ok) {
         const data = await res.json();
@@ -189,7 +243,7 @@ export function SubscriptionProvider({ children, initialUser }) {
 
     if (!savedPlan) {
       savedPlan = {
-        ...planData,
+        ...cleanPlan,
         id: `pp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         productId,
         isActive: true,
@@ -210,6 +264,12 @@ export function SubscriptionProvider({ children, initialUser }) {
    * Update an existing product plan
    */
   const updateProductPlan = async (planId, productId, updates, authToken) => {
+    const cleanUpdates = {
+      ...updates,
+      ...(updates.price !== undefined ? { price: Math.max(0, parseFloat(updates.price) || 0) } : {}),
+      ...(updates.minimumQuantity !== undefined ? { minimumQuantity: Math.max(1, parseInt(updates.minimumQuantity) || 1) } : {})
+    };
+
     let updatedPlan = null;
     try {
       const headers = {
@@ -219,7 +279,7 @@ export function SubscriptionProvider({ children, initialUser }) {
       const res = await fetch(`/api/plans/${planId}`, {
         method: 'PUT',
         headers,
-        body: JSON.stringify(updates)
+        body: JSON.stringify(cleanUpdates)
       });
       if (res.ok) {
         const data = await res.json();
@@ -233,7 +293,7 @@ export function SubscriptionProvider({ children, initialUser }) {
       const current = prev[productId] || [];
       const next = current.map((p) => {
         if (p.id !== planId) return p;
-        return updatedPlan || { ...p, ...updates, updatedAt: new Date().toISOString() };
+        return updatedPlan || { ...p, ...cleanUpdates, updatedAt: new Date().toISOString() };
       });
       return { ...prev, [productId]: next };
     });
@@ -489,6 +549,7 @@ export function SubscriptionProvider({ children, initialUser }) {
         showToast,
         // Product actions
         addProduct,
+        updateProduct,
         deleteProduct,
         // Product-scoped plan actions
         getPlansForProduct,
