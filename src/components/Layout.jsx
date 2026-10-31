@@ -51,37 +51,37 @@ export default function Layout({ onLogout }) {
       case '/products':
         return {
           title: 'Products & plans',
-          subtitle: 'Scene 2: Configure recurring software plans, variant pricing & lifecycle rules'
+          subtitle: 'Configure recurring software plans, variant pricing & lifecycle rules'
         };
       case '/quotes':
         return {
           title: 'Subscriptions & quotes',
-          subtitle: 'Scene 3: Templates, quote progression (Draft ➔ Quotation ➔ Confirmed ➔ Active ➔ Closed)'
+          subtitle: 'Templates, quote progression (Draft ➔ Quotation ➔ Confirmed ➔ Active ➔ Closed)'
         };
       case '/billing':
         return {
           title: 'Invoices & billing',
-          subtitle: 'Scene 4: Automated invoice generation, tax calculation rules & double-billing prevention'
+          subtitle: 'Automated invoice generation, tax calculation rules & double-billing prevention'
         };
       case '/discounts':
         return {
           title: 'Discounts & rules',
-          subtitle: 'Scene 5: Admin-restricted discounts, percentage/fixed amounts & usage tracking'
+          subtitle: 'Admin-restricted discounts, percentage/fixed amounts & usage tracking'
         };
       case '/payments':
         return {
           title: 'Payments & collections',
-          subtitle: 'Scene 6: Multi-method transaction reconciliation & overdue invoice recovery'
+          subtitle: 'Multi-method transaction reconciliation & overdue invoice recovery'
         };
       case '/portal':
         return {
           title: 'Customer portal',
-          subtitle: 'Scene 1: Customer view for managing subscriptions, add-ons & instant invoice payments'
+          subtitle: 'Customer view for managing subscriptions, add-ons & instant invoice payments'
         };
       case '/team':
         return {
           title: 'Team & access',
-          subtitle: 'Scene 1: Role-based permissions, SQLite database integration & admin staff onboarding'
+          subtitle: 'Manage roles and staff access'
         };
       default:
         return {
@@ -311,7 +311,7 @@ export default function Layout({ onLogout }) {
               onClick={() => runBillingDay()}
               className="neu-btn-primary"
               style={{ padding: '9px 16px', fontSize: '0.84rem' }}
-              title="Simulate Scene 4: Automated recurring billing day run"
+              title="Simulate Automated recurring billing day run"
             >
               <Zap size={15} />
               Run Billing Day

@@ -381,7 +381,7 @@ export default function SubscriptionsPage() {
       <div className="neu-flat" style={{ padding: '24px 30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <span style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Scene 3: Quotation & Subscription Lifecycle
+            QUOTATIONS & SUBSCRIPTIONS
           </span>
           <h2 style={{ fontSize: '1.45rem', fontWeight: 800, marginTop: '4px', color: 'var(--text-main)' }}>
             Quotes, Contracts & Lifecycle Transitions
@@ -834,7 +834,7 @@ export default function SubscriptionsPage() {
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                     <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                      Discount / Coupon Deal (Scene 5)
+                      Discount / Coupon
                     </label>
                     <span style={{ fontSize: '0.74rem', color: 'var(--primary)', fontWeight: 700 }}>
                       Current Seats: {totalFormSeats}

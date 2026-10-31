@@ -791,7 +791,7 @@ export default function BillingPage() {
 
               <div>
                 <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
-                  Payment Method (Scene 6)
+                  Payment Method
                 </label>
                 <select
                   value={paymentMethod}

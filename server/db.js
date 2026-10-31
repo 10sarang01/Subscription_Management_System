@@ -39,12 +39,24 @@ async function initDatabase() {
       cost_price REAL NOT NULL,
       notes TEXT,
       has_odoo_variant INTEGER NOT NULL DEFAULT 0,
-      odoo_price_offset REAL NOT NULL DEFAULT 560,
+      odoo_price_offset REAL NOT NULL DEFAULT 0,
       variants_json TEXT,
       tax_id INTEGER,
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS product_variants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      attribute_name TEXT NOT NULL,
+      attribute_value TEXT NOT NULL,
+      extra_price REAL NOT NULL DEFAULT 0,
+      sku TEXT UNIQUE,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(product_id, attribute_name, attribute_value)
     );
 
     -- Legacy global plans table (kept for backward compatibility)
@@ -109,92 +121,20 @@ async function initDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_discounts_code ON discounts(code);
     CREATE INDEX IF NOT EXISTS idx_discounts_active ON discounts(is_active);
-
-    -- Subscriptions table (full lifecycle management)
-    CREATE TABLE IF NOT EXISTS app_subscriptions (
-      id TEXT PRIMARY KEY,
-      sub_number TEXT NOT NULL,
-      customer_name TEXT NOT NULL,
-      customer_email TEXT NOT NULL,
-      plan_id TEXT,
-      plan_name TEXT,
-      billing_frequency TEXT NOT NULL DEFAULT 'monthly',
-      start_date TEXT,
-      expiry_date TEXT,
-      next_billing_date TEXT,
-      last_billing_date TEXT,
-      payment_terms TEXT DEFAULT 'Net 15',
-      status TEXT NOT NULL DEFAULT 'Draft',
-      discount_code TEXT,
-      total_amount REAL DEFAULT 0,
-      quote_validity_days INTEGER DEFAULT 30,
-      quote_valid_until TEXT,
-      quote_issued_at TEXT,
-      renewal_of TEXT,
-      notes TEXT,
-      items_json TEXT NOT NULL DEFAULT '[]',
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_app_subs_status ON app_subscriptions(status);
-    CREATE INDEX IF NOT EXISTS idx_app_subs_email ON app_subscriptions(customer_email);
-
-    -- Invoices table
-    CREATE TABLE IF NOT EXISTS app_invoices (
-      id TEXT PRIMARY KEY,
-      invoice_number TEXT NOT NULL,
-      subscription_number TEXT,
-      customer_name TEXT NOT NULL,
-      customer_email TEXT,
-      issue_date TEXT NOT NULL,
-      due_date TEXT,
-      billing_period_start TEXT,
-      billing_period_end TEXT,
-      subtotal REAL DEFAULT 0,
-      tax_total REAL DEFAULT 0,
-      discount_amount REAL DEFAULT 0,
-      discount_code TEXT,
-      total REAL DEFAULT 0,
-      amount_paid REAL DEFAULT 0,
-      balance REAL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'Confirmed',
-      sent_at TEXT,
-      items_json TEXT NOT NULL DEFAULT '[]',
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_app_invoices_status ON app_invoices(status);
-    CREATE INDEX IF NOT EXISTS idx_app_invoices_sub ON app_invoices(subscription_number);
-
-    -- Payments table
-    CREATE TABLE IF NOT EXISTS app_payments (
-      id TEXT PRIMARY KEY,
-      payment_number TEXT NOT NULL,
-      invoice_id TEXT,
-      invoice_number TEXT,
-      customer_name TEXT,
-      date TEXT NOT NULL,
-      method TEXT NOT NULL DEFAULT 'Credit Card (Stripe)',
-      amount REAL NOT NULL,
-      transaction_ref TEXT,
-      note TEXT,
-      status TEXT NOT NULL DEFAULT 'Completed',
+    CREATE TABLE IF NOT EXISTS discount_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      name TEXT NOT NULL, discount_type TEXT NOT NULL CHECK(discount_type IN ('percentage','fixed')),
+      value REAL NOT NULL CHECK(value > 0), scope TEXT NOT NULL CHECK(scope IN ('product','subscription')),
+      product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+      min_purchase_amount REAL NOT NULL DEFAULT 0, min_quantity INTEGER NOT NULL DEFAULT 0,
+      start_date DATE, end_date DATE, max_uses INTEGER, times_used INTEGER NOT NULL DEFAULT 0,
+      created_by INTEGER NOT NULL REFERENCES users(id), is_active INTEGER NOT NULL DEFAULT 1,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
-
-    -- Quotation templates table
-    CREATE TABLE IF NOT EXISTS app_quotation_templates (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      validity_days INTEGER NOT NULL DEFAULT 30,
-      plan_id TEXT,
-      items_json TEXT NOT NULL DEFAULT '[]',
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
   `);
+
+  // Quotation creation must not consume a redemption; billing updates usage atomically.
+  await db.exec('DROP TRIGGER IF EXISTS trg_discount_applied_increment');
 
   // Older database files predate JSON-backed product variants.
   const productColumns = await db.prepare('PRAGMA table_info(products)').all();
@@ -272,102 +212,7 @@ async function initDatabase() {
     }
   }
 
-  // Ensure Default Hardcoded Discounts exist in SQLite database
-  const discountCheck = await db.prepare("SELECT COUNT(*) as count FROM discounts").get();
-  if (!discountCheck || discountCheck.count === 0) {
-    const seedDiscounts = [
-      {
-        id: 'disc-1',
-        code: 'ENTERPRISE20',
-        name: 'Enterprise Volume License',
-        type: 'percentage',
-        value: 20,
-        scope: 'whole_subscription',
-        target_product_id: null,
-        min_quantity: 5,
-        min_amount: 1000,
-        start_date: '2026-01-01',
-        end_date: '2026-12-31',
-        usage_limit: 50,
-        times_used: 14,
-        is_active: 1
-      },
-      {
-        id: 'disc-2',
-        code: 'ODOO60BOOST',
-        name: 'Odoo Variant Modernization Discount',
-        type: 'fixed',
-        value: 60,
-        scope: 'specific_product',
-        target_product_id: 'prod-1',
-        min_quantity: 2,
-        min_amount: 300,
-        start_date: '2026-02-01',
-        end_date: '2026-11-30',
-        usage_limit: 30,
-        times_used: 19,
-        is_active: 1
-      },
-      {
-        id: 'disc-3',
-        code: 'STARTUP500',
-        name: 'Incubator Growth Grant',
-        type: 'fixed',
-        value: 500,
-        scope: 'whole_subscription',
-        target_product_id: null,
-        min_quantity: 1,
-        min_amount: 2000,
-        start_date: '2026-01-01',
-        end_date: '2026-08-31',
-        usage_limit: 10,
-        times_used: 10,
-        is_active: 0
-      },
-      {
-        id: 'disc-4',
-        code: 'SEATBOOST10',
-        name: 'Multi-Seat Growth Deal (Scene 5)',
-        type: 'percentage',
-        value: 10,
-        scope: 'whole_subscription',
-        target_product_id: null,
-        min_quantity: 3,
-        min_amount: 500,
-        start_date: '2026-01-01',
-        end_date: '2026-12-31',
-        usage_limit: 100,
-        times_used: 5,
-        is_active: 1
-      }
-    ];
 
-    const insertDisc = await db.prepare(`
-      INSERT INTO discounts (id, code, name, type, value, scope, target_product_id, min_quantity, min_amount, start_date, end_date, usage_limit, times_used, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    for (const d of seedDiscounts) {
-      await insertDisc.run(
-        d.id,
-        d.code,
-        d.name,
-        d.type,
-        d.value,
-        d.scope,
-        d.target_product_id,
-        d.min_quantity,
-        d.min_amount,
-        d.start_date,
-        d.end_date,
-        d.usage_limit,
-        d.times_used,
-        d.is_active
-      );
-    }
-
-    console.log('✅ SQLite discounts table initialized and seeded with default discounts.');
-  }
 }
 
 // User query functions
@@ -396,190 +241,60 @@ async function createUser({ email, password, full_name, role = 'customer', compa
 
 // ─── Product query functions ───────────────────────────────────────────────
 
-async function getAllProducts() {
-  const rows = db.prepare('SELECT * FROM products ORDER BY created_at DESC').all();
-  const allVariants = db.prepare('SELECT id, product_id, attribute_name, attribute_value, extra_price FROM product_variants ORDER BY id ASC').all();
-  
-  const variantsMap = {};
-  for (const v of allVariants) {
-    if (!variantsMap[v.product_id]) {
-      variantsMap[v.product_id] = [];
-    }
-    variantsMap[v.product_id].push({
-      id: v.id,
-      name: v.attribute_value,
-      attributeName: v.attribute_name,
-      priceOffset: v.extra_price
-    });
-  }
-
-  return rows.map(r => ({
-    id: r.id,
-    name: r.name,
-    type: r.type || (r.product_type ? r.product_type.charAt(0).toUpperCase() + r.product_type.slice(1) : 'Software'),
-    salesPrice: r.sales_price,
-    costPrice: r.cost_price,
-    notes: r.notes || '',
-    hasOdooVariant: Boolean(r.has_odoo_variant),
-    odooPriceOffset: r.odoo_price_offset !== undefined && r.odoo_price_offset !== null ? r.odoo_price_offset : 560,
-    variants: variantsMap[r.id] || []
-  }));
-}
-
 async function getVariantsByProductId(productId) {
-  const rows = db.prepare('SELECT id, product_id, attribute_name, attribute_value, extra_price, sku, is_active FROM product_variants WHERE product_id = ? ORDER BY id ASC').all(productId);
-  return rows.map(v => ({
-    id: v.id,
-    productId: v.product_id,
-    name: v.attribute_value,
-    attributeName: v.attribute_name,
-    priceOffset: v.extra_price,
-    sku: v.sku,
-    isActive: Boolean(v.is_active)
-  }));
+  const rows = await db.prepare('SELECT id, product_id, attribute_name, attribute_value, extra_price, sku, is_active FROM product_variants WHERE product_id = ? ORDER BY id').all(productId);
+  return rows.map((row) => ({ id: row.id, productId: row.product_id, name: row.attribute_value, attributeName: row.attribute_name, priceOffset: row.extra_price, sku: row.sku, isActive: Boolean(row.is_active) }));
 }
-
-async function createProduct({ id, name, type, salesPrice, costPrice, notes, hasOdooVariant = false, odooPriceOffset = 560, variants = [] }) {
-  const prodId = id || `prod-${Date.now()}`;
-  const validSalesPrice = Math.max(0, parseFloat(salesPrice) || 0);
-  const validCostPrice = Math.max(0, parseFloat(costPrice) || 0);
-  const validOdooOffset = Math.max(0, parseFloat(odooPriceOffset) || 0);
-  const sanitizedVariants = (variants || []).map(v => ({
-    ...v,
-    priceOffset: Math.max(0, parseFloat(v.priceOffset) || 0)
-  }));
-
-  const stmt = db.prepare(`
-    INSERT INTO products (id, name, type, product_type, sales_price, cost_price, notes, has_odoo_variant, odoo_price_offset)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  await stmt.run(
-    prodId,
-    name.trim(),
-    type,
-    (type || 'software').toLowerCase(),
-    validSalesPrice,
-    validCostPrice,
-    notes || '',
-    hasOdooVariant ? 1 : 0,
-    validOdooOffset
-  );
-
-  // Insert variants into normalized product_variants table
-  const insertVariant = db.prepare(`
-    INSERT INTO product_variants (product_id, attribute_name, attribute_value, extra_price)
-    VALUES (?, ?, ?, ?)
-  `);
-  const savedVariants = [];
-  for (const v of sanitizedVariants) {
-    const attrName = v.attributeName || (v.name && v.name.toLowerCase().includes('odoo') ? 'Brand' : 'Edition');
-    const result = insertVariant.run(prodId, attrName, (v.name || 'Standard Edition').trim(), v.priceOffset);
-    savedVariants.push({
-      id: Number(result.lastInsertRowid),
-      name: (v.name || 'Standard Edition').trim(),
-      attributeName: attrName,
-      priceOffset: v.priceOffset
-    });
-  }
-
-  return {
-    id: prodId,
-    name,
-    type,
-    salesPrice: validSalesPrice,
-    costPrice: validCostPrice,
-    notes: notes || '',
-    hasOdooVariant: Boolean(hasOdooVariant),
-    odooPriceOffset: validOdooOffset,
-    variants: savedVariants
-  };
+async function mapProduct(row) {
+  const variants = await getVariantsByProductId(row.id);
+  return { id: row.id, name: row.name, type: row.type, salesPrice: row.sales_price,
+    costPrice: row.cost_price, notes: row.notes || '', hasOdooVariant: Boolean(row.has_odoo_variant),
+    odooPriceOffset: row.odoo_price_offset, variants: variants.length ? variants : (row.variants_json ? JSON.parse(row.variants_json) : []) };
 }
-
-async function deleteProduct(id) {
-  // ON DELETE CASCADE automatically removes child product_variants and product_plans
-  return db.prepare('DELETE FROM products WHERE id = ?').run(id);
+async function getAllProducts() {
+  const rows = await db.prepare('SELECT * FROM products ORDER BY created_at DESC').all();
+  return Promise.all(rows.map(mapProduct));
 }
-
-async function updateProduct(id, { name, type, salesPrice, costPrice, notes, hasOdooVariant, odooPriceOffset = 560, variants }) {
-  const allowedCols = [];
-  const values = [];
-
-  if (name !== undefined) {
-    allowedCols.push('name = ?');
-    values.push(name.trim());
-  }
-  if (type !== undefined) {
-    allowedCols.push('type = ?');
-    values.push(type);
-    allowedCols.push('product_type = ?');
-    values.push((type || 'software').toLowerCase());
-  }
-  if (salesPrice !== undefined) {
-    allowedCols.push('sales_price = ?');
-    values.push(Math.max(0, parseFloat(salesPrice) || 0));
-  }
-  if (costPrice !== undefined) {
-    allowedCols.push('cost_price = ?');
-    values.push(Math.max(0, parseFloat(costPrice) || 0));
-  }
-  if (notes !== undefined) {
-    allowedCols.push('notes = ?');
-    values.push(notes || '');
-  }
-  if (hasOdooVariant !== undefined) {
-    allowedCols.push('has_odoo_variant = ?');
-    values.push(hasOdooVariant ? 1 : 0);
-  }
-  if (odooPriceOffset !== undefined) {
-    allowedCols.push('odoo_price_offset = ?');
-    values.push(Math.max(0, parseFloat(odooPriceOffset) || 0));
-  }
-
-  if (allowedCols.length > 0) {
-    values.push(id);
-    db.prepare(`UPDATE products SET ${allowedCols.join(', ')} WHERE id = ?`).run(...values);
-  }
-
-  // Synchronize variants in normalized product_variants table if provided
-  if (variants !== undefined) {
-    const sanitizedVariants = (variants || []).map(v => ({
-      ...v,
-      priceOffset: Math.max(0, parseFloat(v.priceOffset) || 0)
-    }));
-
-    db.prepare('DELETE FROM product_variants WHERE product_id = ?').run(id);
-
-    const insertVariant = db.prepare(`
-      INSERT INTO product_variants (product_id, attribute_name, attribute_value, extra_price)
-      VALUES (?, ?, ?, ?)
-    `);
-    for (const v of sanitizedVariants) {
-      const attrName = v.attributeName || (v.name && v.name.toLowerCase().includes('odoo') ? 'Brand' : 'Edition');
-      insertVariant.run(id, attrName, (v.name || 'Standard Edition').trim(), v.priceOffset);
+async function syncVariants(productId, variants) {
+  const current = await getVariantsByProductId(productId);
+  const kept = new Set();
+  for (const variant of variants) {
+    const name = variant.name.trim();
+    const attribute = variant.attributeName || 'Edition';
+    const existing = current.find((row) => !kept.has(row.id) && (variant.id != null ? String(row.id) === String(variant.id) : row.name === name && row.attributeName === attribute));
+    if (existing) {
+      await db.prepare('UPDATE product_variants SET attribute_name = ?, attribute_value = ?, extra_price = ? WHERE id = ? AND product_id = ?').run(attribute, name, Number(variant.priceOffset), existing.id, productId);
+      kept.add(existing.id);
+    } else {
+      const result = await db.prepare('INSERT INTO product_variants (product_id, attribute_name, attribute_value, extra_price) VALUES (?, ?, ?, ?)').run(productId, attribute, name, Number(variant.priceOffset));
+      kept.add(result.lastInsertRowid);
     }
   }
-
-  const r = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
-  if (!r) return null;
-
-  const productVariants = db.prepare('SELECT id, attribute_name, attribute_value, extra_price FROM product_variants WHERE product_id = ? ORDER BY id ASC').all(id);
-
-  return {
-    id: r.id,
-    name: r.name,
-    type: r.type,
-    salesPrice: r.sales_price,
-    costPrice: r.cost_price,
-    notes: r.notes || '',
-    hasOdooVariant: Boolean(r.has_odoo_variant),
-    odooPriceOffset: r.odoo_price_offset,
-    variants: productVariants.map(v => ({
-      id: v.id,
-      name: v.attribute_value,
-      attributeName: v.attribute_name,
-      priceOffset: v.extra_price
-    }))
-  };
+  for (const existing of current) if (!kept.has(existing.id)) await db.prepare('DELETE FROM product_variants WHERE id = ? AND product_id = ?').run(existing.id, productId);
+  const saved = await getVariantsByProductId(productId);
+  await db.prepare('UPDATE products SET variants_json = ? WHERE id = ?').run(JSON.stringify(saved), productId);
+}
+function productType(type) { return String(type || '').toLowerCase().replace('-', ''); }
+async function createProduct({ id, name, type, salesPrice, costPrice, notes, variants = [] }) {
+  const productId = id || `prod-${require('crypto').randomUUID()}`;
+  return db.transaction(async () => {
+    await db.prepare(`INSERT INTO products (id, name, type, product_type, sales_price, cost_price, notes, has_odoo_variant, odoo_price_offset, variants_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, '[]')`).run(productId, name.trim(), type, productType(type), Number(salesPrice), Number(costPrice), notes || '');
+    await syncVariants(productId, variants);
+    return mapProduct(await db.prepare('SELECT * FROM products WHERE id = ?').get(productId));
+  });
+}
+async function deleteProduct(id) { return db.prepare('DELETE FROM products WHERE id = ?').run(id); }
+async function updateProduct(id, updates) {
+  return db.transaction(async () => {
+    const existing = await db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+    if (!existing) return null;
+    const type = updates.type === undefined ? existing.type : updates.type;
+    await db.prepare('UPDATE products SET name = ?, type = ?, product_type = ?, sales_price = ?, cost_price = ?, notes = ? WHERE id = ?')
+      .run(updates.name === undefined ? existing.name : updates.name.trim(), type, productType(type), updates.salesPrice === undefined ? existing.sales_price : Number(updates.salesPrice), updates.costPrice === undefined ? existing.cost_price : Number(updates.costPrice), updates.notes === undefined ? existing.notes : updates.notes, id);
+    if (updates.variants !== undefined) await syncVariants(id, updates.variants);
+    return mapProduct(await db.prepare('SELECT * FROM products WHERE id = ?').get(id));
+  });
 }
 
 // ─── Legacy global plans (kept for backward compatibility) ─────────────────
@@ -679,7 +394,6 @@ async function getAllProductPlans() {
 }
 
 async function createProductPlan({
-  id,
   productId,
   name,
   price,
@@ -693,14 +407,9 @@ async function createProductPlan({
   allowRenew = true,
   description = ''
 }) {
-  const planId = id || `pp-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const planId = `pp-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
   const validPrice = Math.max(0, parseFloat(price) || 0);
-  const today = new Date().toISOString().slice(0, 10);
-  const nextYear = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
-  const validFrom = availableFrom || today;
-  const validUntil = availableUntil || nextYear;
-
-  const stmt = db.prepare(`
+  const stmt = await db.prepare(`
     INSERT INTO product_plans
       (id, product_id, name, price, billing_interval, minimum_quantity,
        available_from, available_until, auto_close, allow_early_close,
@@ -712,10 +421,10 @@ async function createProductPlan({
     productId,
     name.trim(),
     validPrice,
-    billingInterval || 'monthly',
+    billingInterval,
     Math.max(1, parseInt(minimumQuantity) || 1),
-    validFrom,
-    validUntil,
+    availableFrom,
+    availableUntil,
     autoClose ? 1 : 0,
     allowEarlyClose ? 1 : 0,
     allowPause ? 1 : 0,
@@ -790,383 +499,47 @@ async function deleteProductPlan(planId) {
 
 function mapDiscountRow(r) {
   return {
-    id: r.id,
-    code: r.code,
-    name: r.name,
-    type: r.type,
-    value: r.value,
-    scope: r.scope,
-    targetProductId: r.target_product_id,
-    minQuantity: r.min_quantity,
-    minAmount: r.min_amount,
-    startDate: r.start_date,
-    endDate: r.end_date,
-    usageLimit: r.usage_limit,
-    timesUsed: r.times_used,
-    isActive: Boolean(r.is_active),
-    createdAt: r.created_at,
-    updatedAt: r.updated_at
+    id: String(r.id), code: r.code, name: r.name, type: r.discount_type,
+    value: r.value, scope: r.scope === 'product' ? 'specific_product' : 'whole_subscription',
+    targetProductId: r.product_id == null ? null : String(r.product_id),
+    minQuantity: r.min_quantity, minAmount: r.min_purchase_amount,
+    startDate: r.start_date, endDate: r.end_date, usageLimit: r.max_uses,
+    timesUsed: r.times_used, isActive: Boolean(r.is_active), createdAt: r.created_at
   };
 }
-
 async function getAllDiscounts() {
-  const rows = await db.prepare('SELECT * FROM discounts ORDER BY created_at DESC').all();
-  return rows.map(mapDiscountRow);
+  return (await db.prepare('SELECT * FROM discount_rules ORDER BY created_at DESC, id DESC').all()).map(mapDiscountRow);
 }
-
 async function getDiscountByCode(code) {
   if (!code) return null;
-  const row = await db.prepare('SELECT * FROM discounts WHERE code = ? COLLATE NOCASE').get(code.trim());
+  const row = await db.prepare('SELECT * FROM discount_rules WHERE code = ? COLLATE NOCASE').get(code.trim());
   return row ? mapDiscountRow(row) : null;
 }
-
 async function getDiscountById(id) {
-  const row = await db.prepare('SELECT * FROM discounts WHERE id = ?').get(id);
+  const row = await db.prepare('SELECT * FROM discount_rules WHERE id = ?').get(id);
   return row ? mapDiscountRow(row) : null;
 }
-
-async function createDiscount({
-  id,
-  code,
-  name,
-  type,
-  value,
-  scope,
-  targetProductId,
-  minQuantity,
-  minAmount,
-  startDate,
-  endDate,
-  usageLimit
-}) {
-  const discId = id || `disc-${Date.now()}`;
-  const cleanCode = (code || '').toUpperCase().trim();
-  const cleanName = (name || '').trim();
-  const cleanType = type === 'fixed' ? 'fixed' : 'percentage';
-  const cleanValue = Math.max(0, parseFloat(value) || 0);
-  const cleanScope = scope === 'specific_product' ? 'specific_product' : 'whole_subscription';
-  const cleanTargetProdId = cleanScope === 'specific_product' ? (targetProductId || null) : null;
-  const cleanMinQty = Math.max(1, parseInt(minQuantity, 10) || 1);
-  const cleanMinAmt = Math.max(0, parseFloat(minAmount) || 0);
-  const cleanUsageLimit = Math.max(1, parseInt(usageLimit, 10) || 100);
-
-  const stmt = await db.prepare(`
-    INSERT INTO discounts (id, code, name, type, value, scope, target_product_id, min_quantity, min_amount, start_date, end_date, usage_limit, times_used, is_active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
-  `);
-
-  await stmt.run(
-    discId,
-    cleanCode,
-    cleanName,
-    cleanType,
-    cleanValue,
-    cleanScope,
-    cleanTargetProdId,
-    cleanMinQty,
-    cleanMinAmt,
-    startDate || null,
-    endDate || null,
-    cleanUsageLimit
-  );
-
-  return getDiscountById(discId);
+async function createDiscount({ code, name, type, value, scope, targetProductId, minQuantity, minAmount, startDate, endDate, usageLimit, createdBy }) {
+  const result = await db.prepare(`INSERT INTO discount_rules
+    (code,name,discount_type,value,scope,product_id,min_quantity,min_purchase_amount,start_date,end_date,max_uses,created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(code.trim().toUpperCase(), name.trim(), type, Number(value),
+      scope === 'specific_product' ? 'product' : 'subscription', scope === 'specific_product' ? targetProductId : null,
+      Number(minQuantity), Number(minAmount), startDate || null, endDate || null, usageLimit == null ? null : Number(usageLimit), createdBy);
+  return getDiscountById(result.lastInsertRowid);
 }
-
 async function toggleDiscountStatus(id, isActive) {
-  const newActive = isActive !== undefined ? (isActive ? 1 : 0) : null;
-  if (newActive !== null) {
-    await db.prepare('UPDATE discounts SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newActive, id);
-  } else {
-    await db.prepare('UPDATE discounts SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
-  }
+  if (typeof isActive === 'boolean') await db.prepare('UPDATE discount_rules SET is_active = ? WHERE id = ?').run(isActive ? 1 : 0, id);
+  else await db.prepare('UPDATE discount_rules SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = ?').run(id);
   return getDiscountById(id);
 }
-
 async function incrementDiscountUsage(code, count = 1) {
-  if (!code) return null;
-  const cleanCode = code.toUpperCase().trim();
-  const disc = await getDiscountByCode(cleanCode);
-  if (!disc) return null;
-
-  const newCount = disc.timesUsed + count;
-  const shouldDeactivate = disc.usageLimit && newCount >= disc.usageLimit;
-
-  await db.prepare(`
-    UPDATE discounts 
-    SET times_used = ?, 
-        is_active = CASE WHEN ? = 1 THEN 0 ELSE is_active END,
-        updated_at = CURRENT_TIMESTAMP 
-    WHERE id = ?
-  `).run(newCount, shouldDeactivate ? 1 : 0, disc.id);
-
-  return getDiscountById(disc.id);
+  await db.prepare('UPDATE discount_rules SET times_used = times_used + ? WHERE code = ? COLLATE NOCASE AND is_active = 1 AND (max_uses IS NULL OR times_used + ? <= max_uses)').run(count, code, count);
+  return getDiscountByCode(code);
 }
-
 async function deleteDiscount(id) {
-  return db.prepare('DELETE FROM discounts WHERE id = ?').run(id);
+  return db.prepare('DELETE FROM discount_rules WHERE id = ?').run(id);
 }
 
-async function getVariantsByProductId(productId) {
-  const rows = db.prepare('SELECT id, product_id, attribute_name, attribute_value, extra_price, sku, is_active FROM product_variants WHERE product_id = ? ORDER BY id ASC').all(productId);
-  return rows.map(v => ({
-    id: v.id,
-    productId: v.product_id,
-    name: v.attribute_value,
-    attributeName: v.attribute_name,
-    priceOffset: v.extra_price,
-    sku: v.sku,
-    isActive: Boolean(v.is_active)
-  }));
-}
-
-// ─── Subscription CRUD ──────────────────────────────────────────────────────
-
-function mapSubRow(r) {
-  return {
-    id: r.id,
-    subNumber: r.sub_number,
-    customerName: r.customer_name,
-    customerEmail: r.customer_email,
-    planId: r.plan_id,
-    planName: r.plan_name,
-    billingFrequency: r.billing_frequency,
-    startDate: r.start_date,
-    expiryDate: r.expiry_date,
-    nextBillingDate: r.next_billing_date,
-    lastBillingDate: r.last_billing_date,
-    paymentTerms: r.payment_terms,
-    status: r.status,
-    discountCode: r.discount_code,
-    totalAmount: r.total_amount,
-    quoteValidityDays: r.quote_validity_days,
-    quoteValidUntil: r.quote_valid_until,
-    quoteIssuedAt: r.quote_issued_at,
-    renewalOf: r.renewal_of,
-    notes: r.notes,
-    items: JSON.parse(r.items_json || '[]'),
-    createdAt: r.created_at,
-    updatedAt: r.updated_at
-  };
-}
-
-async function getAllSubscriptions() {
-  return db.prepare('SELECT * FROM app_subscriptions ORDER BY created_at DESC').all().map(mapSubRow);
-}
-
-async function createSubscriptionDB(data) {
-  const id = data.id || `sub-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
-  db.prepare(`
-    INSERT INTO app_subscriptions
-      (id, sub_number, customer_name, customer_email, plan_id, plan_name,
-       billing_frequency, start_date, expiry_date, next_billing_date, last_billing_date,
-       payment_terms, status, discount_code, total_amount, quote_validity_days,
-       quote_valid_until, quote_issued_at, renewal_of, notes, items_json)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(
-    id, data.subNumber || '', data.customerName || '', data.customerEmail || '',
-    data.planId || null, data.planName || null, data.billingFrequency || 'monthly',
-    data.startDate || null, data.expiryDate || null, data.nextBillingDate || null,
-    data.lastBillingDate || null, data.paymentTerms || 'Net 15', data.status || 'Draft',
-    data.discountCode || null, parseFloat(data.totalAmount) || 0,
-    parseInt(data.quoteValidityDays) || 30, data.quoteValidUntil || null,
-    data.quoteIssuedAt || null, data.renewalOf || null, data.notes || '',
-    JSON.stringify(data.items || [])
-  );
-  return mapSubRow(db.prepare('SELECT * FROM app_subscriptions WHERE id = ?').get(id));
-}
-
-async function updateSubscriptionDB(id, updates) {
-  const existing = db.prepare('SELECT * FROM app_subscriptions WHERE id = ?').get(id);
-  if (!existing) return null;
-  const merged = { ...mapSubRow(existing), ...updates };
-  db.prepare(`
-    UPDATE app_subscriptions SET
-      sub_number=?, customer_name=?, customer_email=?, plan_id=?, plan_name=?,
-      billing_frequency=?, start_date=?, expiry_date=?, next_billing_date=?, last_billing_date=?,
-      payment_terms=?, status=?, discount_code=?, total_amount=?, quote_validity_days=?,
-      quote_valid_until=?, quote_issued_at=?, renewal_of=?, notes=?, items_json=?,
-      updated_at=CURRENT_TIMESTAMP
-    WHERE id=?
-  `).run(
-    merged.subNumber, merged.customerName, merged.customerEmail,
-    merged.planId || null, merged.planName || null, merged.billingFrequency,
-    merged.startDate || null, merged.expiryDate || null, merged.nextBillingDate || null,
-    merged.lastBillingDate || null, merged.paymentTerms, merged.status,
-    merged.discountCode || null, parseFloat(merged.totalAmount) || 0,
-    parseInt(merged.quoteValidityDays) || 30, merged.quoteValidUntil || null,
-    merged.quoteIssuedAt || null, merged.renewalOf || null, merged.notes || '',
-    JSON.stringify(merged.items || []), id
-  );
-  return mapSubRow(db.prepare('SELECT * FROM app_subscriptions WHERE id = ?').get(id));
-}
-
-async function deleteSubscriptionDB(id) {
-  return db.prepare('DELETE FROM app_subscriptions WHERE id = ?').run(id);
-}
-
-// ─── Invoice CRUD ─────────────────────────────────────────────────────────────
-
-function mapInvoiceRow(r) {
-  return {
-    id: r.id,
-    invoiceNumber: r.invoice_number,
-    subscriptionNumber: r.subscription_number,
-    customerName: r.customer_name,
-    customerEmail: r.customer_email,
-    issueDate: r.issue_date,
-    dueDate: r.due_date,
-    billingPeriodStart: r.billing_period_start,
-    billingPeriodEnd: r.billing_period_end,
-    subtotal: r.subtotal,
-    taxTotal: r.tax_total,
-    discountAmount: r.discount_amount,
-    discountCode: r.discount_code,
-    total: r.total,
-    amountPaid: r.amount_paid,
-    balance: r.balance,
-    status: r.status,
-    sentAt: r.sent_at,
-    items: JSON.parse(r.items_json || '[]'),
-    createdAt: r.created_at,
-    updatedAt: r.updated_at
-  };
-}
-
-async function getAllInvoices() {
-  return db.prepare('SELECT * FROM app_invoices ORDER BY created_at DESC').all().map(mapInvoiceRow);
-}
-
-async function createInvoiceDB(data) {
-  const id = data.id || `inv-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
-  db.prepare(`
-    INSERT INTO app_invoices
-      (id, invoice_number, subscription_number, customer_name, customer_email,
-       issue_date, due_date, billing_period_start, billing_period_end,
-       subtotal, tax_total, discount_amount, discount_code, total, amount_paid,
-       balance, status, sent_at, items_json)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(
-    id, data.invoiceNumber || '', data.subscriptionNumber || null,
-    data.customerName || '', data.customerEmail || null,
-    data.issueDate || new Date().toISOString().slice(0,10), data.dueDate || null,
-    data.billingPeriodStart || null, data.billingPeriodEnd || null,
-    parseFloat(data.subtotal) || 0, parseFloat(data.taxTotal) || 0,
-    parseFloat(data.discountAmount) || 0, data.discountCode || null,
-    parseFloat(data.total) || 0, parseFloat(data.amountPaid) || 0,
-    parseFloat(data.balance) || 0, data.status || 'Confirmed',
-    data.sentAt || null, JSON.stringify(data.items || [])
-  );
-  return mapInvoiceRow(db.prepare('SELECT * FROM app_invoices WHERE id = ?').get(id));
-}
-
-async function updateInvoiceDB(id, updates) {
-  const existing = db.prepare('SELECT * FROM app_invoices WHERE id = ?').get(id);
-  if (!existing) return null;
-  const cols = [];
-  const vals = [];
-  const allowed = {
-    status: 'status', sentAt: 'sent_at', amountPaid: 'amount_paid',
-    balance: 'balance', total: 'total'
-  };
-  for (const [jsKey, dbCol] of Object.entries(allowed)) {
-    if (updates[jsKey] !== undefined) {
-      cols.push(`${dbCol} = ?`);
-      vals.push(updates[jsKey]);
-    }
-  }
-  if (cols.length === 0) return mapInvoiceRow(existing);
-  cols.push('updated_at = CURRENT_TIMESTAMP');
-  vals.push(id);
-  db.prepare(`UPDATE app_invoices SET ${cols.join(', ')} WHERE id = ?`).run(...vals);
-  return mapInvoiceRow(db.prepare('SELECT * FROM app_invoices WHERE id = ?').get(id));
-}
-
-// ─── Payment CRUD ─────────────────────────────────────────────────────────────
-
-function mapPaymentRow(r) {
-  return {
-    id: r.id,
-    paymentNumber: r.payment_number,
-    invoiceId: r.invoice_id,
-    invoiceNumber: r.invoice_number,
-    customerName: r.customer_name,
-    date: r.date,
-    method: r.method,
-    amount: r.amount,
-    transactionRef: r.transaction_ref,
-    note: r.note,
-    status: r.status,
-    createdAt: r.created_at
-  };
-}
-
-async function getAllPayments() {
-  return db.prepare('SELECT * FROM app_payments ORDER BY created_at DESC').all().map(mapPaymentRow);
-}
-
-async function createPaymentDB(data) {
-  const id = data.id || `pay-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
-  db.prepare(`
-    INSERT INTO app_payments
-      (id, payment_number, invoice_id, invoice_number, customer_name,
-       date, method, amount, transaction_ref, note, status)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)
-  `).run(
-    id, data.paymentNumber || '', data.invoiceId || null,
-    data.invoiceNumber || null, data.customerName || null,
-    data.date || new Date().toISOString().slice(0,10),
-    data.method || 'Credit Card (Stripe)',
-    parseFloat(data.amount) || 0,
-    data.transactionRef || null, data.note || null,
-    data.status || 'Completed'
-  );
-  return mapPaymentRow(db.prepare('SELECT * FROM app_payments WHERE id = ?').get(id));
-}
-
-// ─── Quotation Template CRUD ──────────────────────────────────────────────────
-
-function mapTemplateRow(r) {
-  return {
-    id: r.id,
-    name: r.name,
-    validityDays: r.validity_days,
-    planId: r.plan_id,
-    items: JSON.parse(r.items_json || '[]'),
-    createdAt: r.created_at,
-    updatedAt: r.updated_at
-  };
-}
-
-async function getAllTemplates() {
-  return db.prepare('SELECT * FROM app_quotation_templates ORDER BY created_at ASC').all().map(mapTemplateRow);
-}
-
-async function createTemplateDB(data) {
-  const id = data.id || `tmpl-${Date.now()}`;
-  db.prepare(`
-    INSERT INTO app_quotation_templates (id, name, validity_days, plan_id, items_json)
-    VALUES (?,?,?,?,?)
-  `).run(
-    id, (data.name || '').trim(), parseInt(data.validityDays) || 30,
-    data.planId || null, JSON.stringify(data.items || [])
-  );
-  return mapTemplateRow(db.prepare('SELECT * FROM app_quotation_templates WHERE id = ?').get(id));
-}
-
-async function updateTemplateDB(id, updates) {
-  const existing = db.prepare('SELECT * FROM app_quotation_templates WHERE id = ?').get(id);
-  if (!existing) return null;
-  const merged = { ...mapTemplateRow(existing), ...updates };
-  db.prepare(
-    'UPDATE app_quotation_templates SET name=?, validity_days=?, plan_id=?, items_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?'
-  ).run(merged.name, merged.validityDays, merged.planId || null, JSON.stringify(merged.items || []), id);
-  return mapTemplateRow(db.prepare('SELECT * FROM app_quotation_templates WHERE id = ?').get(id));
-}
-
-async function deleteTemplateDB(id) {
-  return db.prepare('DELETE FROM app_quotation_templates WHERE id = ?').run(id);
-}
 
 module.exports = {
   db,
@@ -1198,22 +571,5 @@ module.exports = {
   createDiscount,
   toggleDiscountStatus,
   incrementDiscountUsage,
-  deleteDiscount,
-  // Subscriptions
-  getAllSubscriptions,
-  createSubscriptionDB,
-  updateSubscriptionDB,
-  deleteSubscriptionDB,
-  // Invoices
-  getAllInvoices,
-  createInvoiceDB,
-  updateInvoiceDB,
-  // Payments
-  getAllPayments,
-  createPaymentDB,
-  // Quotation Templates
-  getAllTemplates,
-  createTemplateDB,
-  updateTemplateDB,
-  deleteTemplateDB
+  deleteDiscount
 };
