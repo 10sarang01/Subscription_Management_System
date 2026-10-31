@@ -13,6 +13,7 @@ import PaymentsPage from './pages/PaymentsPage';
 import CustomerPortalPage from './pages/CustomerPortalPage';
 import TeamPage from './pages/TeamPage';
 import { SubscriptionProvider } from './context/SubscriptionContext';
+import ThemeToggle from './components/ThemeToggle';
 import { Layers, ShieldCheck, Database } from 'lucide-react';
 
 export default function App() {
@@ -95,8 +96,14 @@ export default function App() {
       justifyContent: 'space-between',
       padding: '40px 20px',
       alignItems: 'center',
-      backgroundColor: 'var(--bg-color)'
+      backgroundColor: 'var(--bg-color)',
+      position: 'relative'
     }}>
+      {/* Theme Toggle in Top Right of Auth View */}
+      <div style={{ position: 'absolute', top: '24px', right: '28px' }}>
+        <ThemeToggle />
+      </div>
+
       {/* Top Header / Brand */}
       <header style={{ marginBottom: '24px', textAlign: 'center' }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '14px', marginBottom: '8px' }}>
@@ -108,7 +115,7 @@ export default function App() {
             alignItems: 'center',
             justifyContent: 'center',
             color: 'var(--primary)',
-            background: 'linear-gradient(135deg, #e2e8f0, #cbd5e1)'
+            background: 'var(--brand-logo-bg)'
           }}>
             <Layers size={26} />
           </div>
@@ -116,7 +123,7 @@ export default function App() {
             fontSize: '1.85rem',
             fontWeight: 800,
             letterSpacing: '-0.02em',
-            color: '#1e293b'
+            color: 'var(--text-main)'
           }}>
             Brightloop <span style={{ color: 'var(--primary)' }}>Systems</span>
           </h1>
