@@ -126,8 +126,42 @@ export function SubscriptionProvider({ children, initialUser }) {
     localStorage.setItem('brightloop_payments', JSON.stringify(payments));
   }, [payments]);
 
-  // Note: Products and plans are persisted in localStorage.
-  // Backend sync happens on individual add/delete operations (with graceful fallback).
+  // Sync products and plans from backend SQLite database on mount
+  useEffect(() => {
+    let isMounted = true;
+    async function syncFromBackend() {
+      try {
+        const res = await fetch('/api/products');
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && Array.isArray(data.products)) {
+            setProducts(data.products);
+            const plansMap = {};
+            await Promise.all(
+              data.products.map(async (p) => {
+                try {
+                  const plansRes = await fetch(`/api/products/${p.id}/plans`);
+                  if (plansRes.ok) {
+                    const pData = await plansRes.json();
+                    plansMap[p.id] = pData.plans || [];
+                  }
+                } catch {
+                  // ignore
+                }
+              })
+            );
+            if (isMounted) {
+              setProductPlans(plansMap);
+            }
+          }
+        }
+      } catch {
+        // Backend offline, fallback to localStorage
+      }
+    }
+    syncFromBackend();
+    return () => { isMounted = false; };
+  }, []);
 
   // ── Product Actions ───────────────────────────────────────────────────
 

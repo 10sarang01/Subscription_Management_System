@@ -115,8 +115,8 @@ async function initDatabase() {
     const adminHash = bcrypt.hashSync(adminPassword, saltRounds);
 
     const insertUser = db.prepare(`
-      INSERT INTO users (email, password_hash, full_name, role, company_name, phone)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, email, password_hash, full_name, role, company_name, phone)
+      VALUES (1, ?, ?, ?, ?, ?, ?)
     `);
 
     insertUser.run(
@@ -128,27 +128,7 @@ async function initDatabase() {
       '+1-555-0100'
     );
 
-    const staffHash = bcrypt.hashSync('Staff@BrightLoop2026!', saltRounds);
-    insertUser.run(
-      'sarah.ops@brightloop.com',
-      staffHash,
-      'Sarah Jenkins',
-      'staff',
-      'Brightloop Software Inc.',
-      '+1-555-0101'
-    );
-
-    const customerHash = bcrypt.hashSync('Customer@BrightLoop2026!', saltRounds);
-    insertUser.run(
-      'alice@cornerbakery.com',
-      customerHash,
-      'Alice Smith',
-      'customer',
-      'Corner Bakery & Cafe',
-      '+1-555-0102'
-    );
-
-    console.log('✅ SQLite users table initialized and seeded with Admin, Staff, and Customer accounts.');
+    console.log('✅ SQLite users table initialized with Admin account.');
   } else {
     console.log('ℹ️ SQLite database already contains admin user.');
   }
