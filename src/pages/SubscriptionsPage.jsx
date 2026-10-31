@@ -112,8 +112,10 @@ export default function SubscriptionsPage() {
       const offset = variantObj?.priceOffset || 0;
       updated[index].variant = value;
       updated[index].unitPrice = basePrice + offset;
+    } else if (field === 'quantity') {
+      updated[index].quantity = value === '' ? '' : Math.max(0, parseInt(value, 10) || 0);
     } else {
-      updated[index][field] = field === 'quantity' ? parseInt(value) || 1 : parseFloat(value) || 0;
+      updated[index][field] = value === '' ? '' : parseFloat(value) || 0;
     }
     setFormItems(updated);
   };
@@ -124,8 +126,8 @@ export default function SubscriptionsPage() {
   };
 
   // Seat and Subtotal Metrics (Scene 5)
-  const totalFormSeats = formItems.reduce((acc, item) => acc + (parseInt(item.quantity) || 1), 0);
-  const formSubtotal = formItems.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
+  const totalFormSeats = formItems.reduce((acc, item) => acc + (parseInt(item.quantity, 10) || 0), 0);
+  const formSubtotal = formItems.reduce((acc, item) => acc + ((parseInt(item.quantity, 10) || 0) * (parseFloat(item.unitPrice) || 0)), 0);
 
   // Live discount validation for Quote modal
   const discountValidation = validateDiscount({
@@ -157,7 +159,7 @@ export default function SubscriptionsPage() {
   // 1-Click Volume deal seat qualification for sales negotiations (Scene 5)
   const autoBumpSeatsToQualify = (targetQuantity) => {
     if (!targetQuantity || formItems.length === 0) return;
-    const otherSeats = formItems.slice(1).reduce((sum, it) => sum + (parseInt(it.quantity) || 1), 0);
+    const otherSeats = formItems.slice(1).reduce((sum, it) => sum + (parseInt(it.quantity, 10) || 0), 0);
     const needed = Math.max(1, targetQuantity - otherSeats);
     updateItemRow(0, 'quantity', needed);
   };
@@ -707,25 +709,25 @@ export default function SubscriptionsPage() {
                           </div>
 
                           {/* Scene 5 Volume Threshold helper button */}
-                          {discountValidation.message?.includes('Volume threshold') && (
+                          {(!discountValidation.valid && (discountValidation.message?.includes('Volume threshold') || (discountValidation.rule?.minQuantity && totalFormSeats < discountValidation.rule.minQuantity))) && (
                             <button
                               type="button"
                               onClick={() => {
-                                const match = discountValidation.message.match(/at least (\d+) seats/);
-                                if (match && match[1]) {
-                                  autoBumpSeatsToQualify(parseInt(match[1]));
-                                }
+                                const target = discountValidation.rule?.minQuantity || 5;
+                                autoBumpSeatsToQualify(target);
                               }}
-                              className="neu-btn"
+                              className="neu-btn-primary"
                               style={{
-                                padding: '4px 10px',
-                                fontSize: '0.76rem',
-                                color: '#b45309',
-                                fontWeight: 700,
-                                borderColor: '#fde68a'
+                                padding: '8px 14px',
+                                fontSize: '0.82rem',
+                                fontWeight: 800,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                cursor: 'pointer'
                               }}
                             >
-                              ⚡ Unlock: Add Required Seats
+                              <Sparkles size={15} /> ⚡ 1-Click: Bump to {discountValidation.rule?.minQuantity || 5} Seats to Unlock Deal
                             </button>
                           )}
                         </div>
@@ -792,12 +794,17 @@ export default function SubscriptionsPage() {
                           placeholder="Qty"
                           value={item.quantity}
                           onChange={(e) => updateItemRow(index, 'quantity', e.target.value)}
+                          onBlur={() => {
+                            if (item.quantity === '' || parseInt(item.quantity, 10) < 1) {
+                              updateItemRow(index, 'quantity', 1);
+                            }
+                          }}
                           className="neu-inset neu-input"
                           style={{ padding: '8px 10px', fontSize: '0.82rem' }}
                         />
 
                         <div style={{ fontSize: '0.86rem', fontWeight: 700, paddingLeft: '8px' }}>
-                          ${(item.quantity * item.unitPrice).toFixed(2)}
+                          ${(((parseInt(item.quantity, 10) || 0) * (parseFloat(item.unitPrice) || 0))).toFixed(2)}
                         </div>
 
                         {formItems.length > 1 && (

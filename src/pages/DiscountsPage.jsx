@@ -74,7 +74,9 @@ export default function DiscountsPage() {
 
   // Run simulation calculation
   const selectedRule = discounts.find((d) => d.code === simDiscountCode);
-  const subtotalBeforeDiscount = simSeats * simBasePrice;
+  const numericSeats = simSeats === '' ? 0 : parseInt(simSeats, 10) || 0;
+  const numericBasePrice = simBasePrice === '' ? 0 : parseFloat(simBasePrice) || 0;
+  const subtotalBeforeDiscount = numericSeats * numericBasePrice;
   let simulatedDeduction = 0;
   let eligibilityMessage = 'Discount applied successfully!';
   let isEligible = true;
@@ -88,12 +90,12 @@ export default function DiscountsPage() {
   } else if (selectedRule.timesUsed >= selectedRule.usageLimit) {
     isEligible = false;
     eligibilityMessage = 'Usage limit has been completely exhausted.';
-  } else if (simSeats < selectedRule.minQuantity) {
+  } else if (numericSeats < selectedRule.minQuantity) {
     isEligible = false;
-    eligibilityMessage = `Minimum requirement not met: Requires at least ${selectedRule.minQuantity} seats (current: ${simSeats}).`;
+    eligibilityMessage = `Minimum requirement not met: Requires at least ${selectedRule.minQuantity} seats (current: ${numericSeats}). Add ${selectedRule.minQuantity - numericSeats} more seats to qualify!`;
   } else if (subtotalBeforeDiscount < selectedRule.minAmount) {
     isEligible = false;
-    eligibilityMessage = `Minimum spend not met: Requires at least $${selectedRule.minAmount} (current: $${subtotalBeforeDiscount}).`;
+    eligibilityMessage = `Minimum spend not met: Requires at least $${selectedRule.minAmount} (current: $${subtotalBeforeDiscount.toFixed(2)}).`;
   } else {
     if (selectedRule.type === 'percentage') {
       simulatedDeduction = (subtotalBeforeDiscount * selectedRule.value) / 100;
@@ -181,8 +183,12 @@ export default function DiscountsPage() {
                   type="number"
                   min="1"
                   value={simSeats}
-                  onChange={(e) => setSimSeats(parseInt(e.target.value) || 1)}
+                  onChange={(e) => setSimSeats(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  onBlur={() => {
+                    if (simSeats === '' || parseInt(simSeats, 10) < 1) setSimSeats(1);
+                  }}
                   className="neu-inset neu-input"
+                  placeholder="e.g. 5"
                 />
               </div>
               <div>
@@ -193,7 +199,10 @@ export default function DiscountsPage() {
                   type="number"
                   min="1"
                   value={simBasePrice}
-                  onChange={(e) => setSimBasePrice(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => setSimBasePrice(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                  onBlur={() => {
+                    if (simBasePrice === '') setSimBasePrice(0);
+                  }}
                   className="neu-inset neu-input"
                 />
               </div>
@@ -202,7 +211,7 @@ export default function DiscountsPage() {
             {/* Simulation Results Card */}
             <div className="neu-inset-sm" style={{ padding: '16px', marginTop: '6px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.86rem', color: 'var(--text-muted)' }}>
-                <span>Subtotal ({simSeats} seats @ ${simBasePrice}):</span>
+                <span>Subtotal ({numericSeats} seats @ ${numericBasePrice}):</span>
                 <strong>${subtotalBeforeDiscount.toFixed(2)}</strong>
               </div>
 
@@ -222,6 +231,29 @@ export default function DiscountsPage() {
                 {isEligible ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
                 <span>{eligibilityMessage}</span>
               </div>
+
+              {/* 1-Click Unlock Deal Button in Simulator */}
+              {!isEligible && selectedRule && numericSeats < selectedRule.minQuantity && (
+                <button
+                  type="button"
+                  onClick={() => setSimSeats(selectedRule.minQuantity)}
+                  className="neu-btn-primary"
+                  style={{
+                    marginTop: '12px',
+                    width: '100%',
+                    padding: '9px 14px',
+                    fontSize: '0.82rem',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Sparkles size={16} /> ⚡ Unlock: Bump to {selectedRule.minQuantity} Seats ({selectedRule.type === 'percentage' ? `${selectedRule.value}% off` : `$${selectedRule.value} off`})
+                </button>
+              )}
             </div>
           </div>
         </div>
