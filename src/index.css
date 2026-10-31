@@ -935,3 +935,79 @@ textarea.neu-input { min-height: 100px; resize: vertical; }
 [data-theme='dark'] .neu-btn-primary { color: #261923; }
 .billing-hero::before { background: radial-gradient(circle, rgba(160, 110, 150, .2), transparent 70%); }
 .billing-hero::after { border-color: rgba(160, 110, 150, .2); box-shadow: 0 0 0 28px rgba(160, 110, 150, .04), 0 0 0 56px rgba(160, 110, 150, .025); }
+
+/* Keep page animations from trapping fixed dialogs inside the scrolling content. */
+@keyframes pageFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.app-content.animate-fade-in { animation: pageFadeIn .3s ease both; }
+.modal-overlay { padding: 24px; overflow-y: auto; }
+.subscription-details {
+  max-height: calc(100dvh - 48px);
+  border: 1px solid var(--shadow-light);
+  box-shadow: 0 20px 70px rgba(12, 8, 12, .38), 0 0 0 1px rgba(255, 255, 255, .04);
+}
+[data-theme='dark'] .subscription-details { background: #443b45; }
+.subscription-details .neu-inset-sm { border: 1px solid var(--shadow-light); }
+.subscription-details .neu-table tr.table-row { background: var(--bg-surface); }
+.subscription-details .neu-btn { min-height: 40px; }
+@media (max-width: 560px) {
+  .modal-overlay { padding: 12px; }
+  .subscription-details { max-height: calc(100dvh - 24px); }
+}
+
+.modal-overlay {
+  display: grid;
+  place-items: center;
+}
+.subscription-details {
+  margin: auto;
+  width: min(100%, 780px);
+}
+
+.subscription-details-header { position: relative; padding: 0 48px 22px 0; border-bottom: 1px solid var(--border-color); margin-bottom: 22px; }
+.subscription-title { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.subscription-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
+.subscription-meta > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.subscription-meta span { color: var(--text-muted); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.subscription-meta strong { font-size: .84rem; overflow-wrap: anywhere; }
+.subscription-meta small { color: var(--text-muted); overflow-wrap: anywhere; }
+.subscription-close { position: absolute; right: 0; top: 0; width: 40px; height: 40px; }
+.subscription-actions { padding: 16px 18px; margin-bottom: 24px; }
+.subscription-summary { display: flex; justify-content: flex-end; border-top: 1px solid var(--border-color); padding-top: 18px; }
+.subscription-summary-content { width: min(100%, 320px); display: flex; flex-direction: column; gap: 12px; font-size: .88rem; }
+.subscription-discount { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; color: var(--success-text); background: var(--success-bg); border: 1px solid var(--success-border); }
+@media (max-width: 600px) { .subscription-meta { grid-template-columns: 1fr; gap: 12px; } .subscription-summary-content { width: 100%; } }
+
+.subscription-overlay { padding: clamp(24px, 5vh, 64px) 24px; }
+.subscription-overlay .subscription-details { max-height: calc(100dvh - 2 * clamp(24px, 5vh, 64px)); }
+@media (max-width: 560px) {
+  .subscription-overlay { padding: 20px 12px; }
+  .subscription-overlay .subscription-details { max-height: calc(100dvh - 40px); }
+}
+
+/* Keep the page and subscription columns steady when filters change. */
+@media (min-width: 901px) {
+  .app-shell { height: 100dvh; min-height: 0; }
+  .app-main { min-height: 0; height: 100%; scrollbar-gutter: stable; }
+}
+.subscriptions-table-container { min-height: 300px; }
+.subscriptions-table { table-layout: fixed; min-width: 1100px; }
+.subscriptions-table th:nth-child(1) { width: 12%; }
+.subscriptions-table th:nth-child(2) { width: 17%; }
+.subscriptions-table th:nth-child(3) { width: 14%; }
+.subscriptions-table th:nth-child(4) { width: 10%; }
+.subscriptions-table th:nth-child(5) { width: 18%; }
+.subscriptions-table th:nth-child(6) { width: 10%; }
+.subscriptions-table th:nth-child(7) { width: 9%; }
+.subscriptions-table th:nth-child(8) { width: 10%; }
+.subscriptions-table td { overflow-wrap: anywhere; }
+
+.billing-overlay { padding: clamp(24px, 5vh, 64px) 24px; }
+.billing-overlay .modal-card { max-height: calc(100dvh - 2 * clamp(24px, 5vh, 64px)); }
+@media (max-width: 560px) {
+  .billing-overlay { padding: 20px 12px; }
+  .billing-overlay .modal-card { max-height: calc(100dvh - 40px); }
+}
+
+.invoice-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; flex: 1; min-width: 0; }
+.invoice-actions > button { min-height: 40px; }
+@media (max-width: 420px) { .invoice-actions { grid-template-columns: 1fr; } }

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Package,
   X,
@@ -118,8 +119,8 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
     });
   };
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
+  return createPortal(
+    <div className="modal-overlay billing-overlay" onClick={onClose}>
       <div className="modal-card animate-fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
           <div style={{
@@ -310,6 +311,6 @@ export default function ProductFormModal({ product, onSubmit, onClose }) {
           </div>
         </form>
       </div>
-    </div>
+    </div>, document.body
   );
 }
