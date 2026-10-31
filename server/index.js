@@ -29,7 +29,8 @@ const {
   createDiscount,
   toggleDiscountStatus,
   incrementDiscountUsage,
-  deleteDiscount
+  deleteDiscount,
+  getVariantsByProductId
 } = require('./db');
 
 const app = express();
@@ -362,6 +363,17 @@ app.delete('/api/products/:id', async (req, res) => {
     res.json({ message: 'Product deleted.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete product.' });
+  }
+});
+
+// GET /api/products/:productId/variants — list variants for a product
+app.get('/api/products/:productId/variants', async (req, res) => {
+  try {
+    const variants = await getVariantsByProductId(req.params.productId);
+    res.json({ variants });
+  } catch (err) {
+    console.error('Fetch product variants error:', err);
+    res.status(500).json({ error: 'Failed to fetch variants for product.' });
   }
 });
 
