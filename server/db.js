@@ -500,5 +500,7 @@ module.exports = {
   createProductPlan,
   updateProductPlan,
   toggleProductPlanStatus,
-  deleteProductPlan
+  deleteProductPlan,
+  // Product variants
+  getVariantsByProductId
 };
