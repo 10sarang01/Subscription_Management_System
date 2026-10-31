@@ -1,9 +1,20 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginForm from './components/LoginForm';
 import RegisterForm from './components/RegisterForm';
 import ResetPasswordModal from './components/ResetPasswordModal';
-import Dashboard from './components/Dashboard';
-import { Layers, ShieldCheck, Database } from 'lucide-react';
+import Layout from './components/Layout';
+import OverviewPage from './pages/OverviewPage';
+import ProductsPage from './pages/ProductsPage';
+import SubscriptionsPage from './pages/SubscriptionsPage';
+import BillingPage from './pages/BillingPage';
+import DiscountsPage from './pages/DiscountsPage';
+import PaymentsPage from './pages/PaymentsPage';
+import CustomerPortalPage from './pages/CustomerPortalPage';
+import TeamPage from './pages/TeamPage';
+import { SubscriptionProvider } from './context/SubscriptionContext';
+import { Layers, ShieldCheck, Database, Sparkles, ArrowRight } from 'lucide-react';
+import { defaultPersonas } from './data/mockData';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -42,9 +53,25 @@ export default function App() {
     setToken(null);
   };
 
+  const enterDirectDemo = (personaIndex = 0) => {
+    const persona = defaultPersonas[personaIndex];
+    const demoUser = {
+      id: personaIndex + 1,
+      full_name: persona.name,
+      email: persona.email,
+      role: persona.role,
+      company_name: persona.company
+    };
+    const mockToken = 'mock_jwt_token_hackathon_demo';
+    localStorage.setItem('brightloop_token', mockToken);
+    localStorage.setItem('brightloop_user', JSON.stringify(demoUser));
+    setCurrentUser(demoUser);
+    setToken(mockToken);
+  };
+
   if (checkingAuth) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100vw' }}>
         <div className="neu-flat" style={{ padding: '24px 32px', fontWeight: 600, color: 'var(--text-muted)' }}>
           Loading Brightloop Systems...
         </div>
@@ -52,18 +79,43 @@ export default function App() {
     );
   }
 
+  // If user is authenticated, render the Enterprise App Shell & Routes
+  if (currentUser) {
+    return (
+      <SubscriptionProvider initialUser={currentUser}>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Layout onLogout={handleLogout} />}>
+              <Route index element={<OverviewPage />} />
+              <Route path="products" element={<ProductsPage />} />
+              <Route path="quotes" element={<SubscriptionsPage />} />
+              <Route path="billing" element={<BillingPage />} />
+              <Route path="discounts" element={<DiscountsPage />} />
+              <Route path="payments" element={<PaymentsPage />} />
+              <Route path="portal" element={<CustomerPortalPage />} />
+              <Route path="team" element={<TeamPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </SubscriptionProvider>
+    );
+  }
+
+  // Non-authenticated View: Sign In / Customer Registration
   return (
     <div style={{
-      width: '100%',
+      width: '100vw',
       minHeight: '100vh',
       display: 'flex',
       flexDirection: 'column',
       justifyContent: 'space-between',
       padding: '40px 20px',
-      alignItems: 'center'
+      alignItems: 'center',
+      backgroundColor: 'var(--bg-color)'
     }}>
       {/* Top Header / Brand */}
-      <header style={{ marginBottom: '32px', textAlign: 'center' }}>
+      <header style={{ marginBottom: '24px', textAlign: 'center' }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '14px', marginBottom: '8px' }}>
           <div className="neu-flat-sm" style={{
             width: '46px',
@@ -87,54 +139,81 @@ export default function App() {
           </h1>
         </div>
         <p style={{ fontSize: '0.92rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-          Subscription Management Platform • User Access Portal
+          Enterprise Subscription & Recurring Billing Platform
         </p>
       </header>
 
       {/* Main Container */}
-      <main style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-        {currentUser ? (
-          <Dashboard user={currentUser} token={token} onLogout={handleLogout} />
-        ) : (
-          <div className="neu-flat animate-fade-in" style={{
-            width: '100%',
-            maxWidth: '480px',
-            padding: '36px 32px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '24px'
-          }}>
-            {/* Neumorphic Tab Toggle */}
-            <div className="neu-tabs">
-              <button
-                type="button"
-                className={`neu-tab ${activeTab === 'login' ? 'active' : ''}`}
-                onClick={() => setActiveTab('login')}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                className={`neu-tab ${activeTab === 'register' ? 'active' : ''}`}
-                onClick={() => setActiveTab('register')}
-              >
-                New Customer
-              </button>
+      <main style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
+        
+        {/* Instant Demo Launcher Card for Hackathon Judges */}
+        <div className="neu-flat animate-fade-in" style={{
+          width: '100%',
+          maxWidth: '520px',
+          padding: '20px 24px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
+          border: '1px solid rgba(79, 70, 229, 0.25)'
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase' }}>
+              <Sparkles size={14} /> Hackathon Judge Evaluation
             </div>
-
-            {/* Forms */}
-            {activeTab === 'login' ? (
-              <LoginForm
-                onLoginSuccess={handleLoginSuccess}
-                onForgotPassword={() => setShowForgotModal(true)}
-              />
-            ) : (
-              <RegisterForm
-                onRegisterSuccess={handleLoginSuccess}
-              />
-            )}
+            <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-main)', marginTop: '2px' }}>
+              Instant Enterprise Demo Access
+            </div>
           </div>
-        )}
+          <button
+            onClick={() => enterDirectDemo(0)}
+            className="neu-btn-primary"
+            style={{ padding: '9px 18px', fontSize: '0.84rem' }}
+          >
+            Enter as Admin <ArrowRight size={14} />
+          </button>
+        </div>
+
+        {/* Authentication Card */}
+        <div className="neu-flat animate-fade-in" style={{
+          width: '100%',
+          maxWidth: '520px',
+          padding: '36px 32px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '24px'
+        }}>
+          {/* Neumorphic Tab Toggle */}
+          <div className="neu-tabs">
+            <button
+              type="button"
+              className={`neu-tab ${activeTab === 'login' ? 'active' : ''}`}
+              onClick={() => setActiveTab('login')}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              className={`neu-tab ${activeTab === 'register' ? 'active' : ''}`}
+              onClick={() => setActiveTab('register')}
+            >
+              New Customer Registration
+            </button>
+          </div>
+
+          {/* Forms */}
+          {activeTab === 'login' ? (
+            <LoginForm
+              onLoginSuccess={handleLoginSuccess}
+              onForgotPassword={() => setShowForgotModal(true)}
+            />
+          ) : (
+            <RegisterForm
+              onRegisterSuccess={handleLoginSuccess}
+            />
+          )}
+        </div>
       </main>
 
       {/* Reset Password Modal */}
@@ -144,7 +223,7 @@ export default function App() {
 
       {/* Footer Info */}
       <footer style={{
-        marginTop: '40px',
+        marginTop: '32px',
         textAlign: 'center',
         fontSize: '0.82rem',
         color: 'var(--text-muted)',
@@ -156,15 +235,15 @@ export default function App() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <Database size={14} />
-          <span>Local Database: <strong>SQLite (users.db)</strong></span>
+          <span>Local SQLite: <strong>users.db</strong></span>
         </div>
         <span>•</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <ShieldCheck size={14} />
-          <span>Admin Initialized: <strong>Elena Vance (admin@brightloop.com)</strong></span>
+          <span>Admin Role Initialized: <strong>Elena Vance</strong></span>
         </div>
         <span>•</span>
-        <span>Neumorphic CSS UI</span>
+        <span>Neumorphic Enterprise Soft UI</span>
       </footer>
     </div>
   );
