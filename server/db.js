@@ -742,10 +742,8 @@ module.exports = {
   updateProductPlan,
   toggleProductPlanStatus,
   deleteProductPlan,
-<<<<<<< HEAD
   // Product variants
-  getVariantsByProductId
-=======
+  getVariantsByProductId,
   // Discounts
   getAllDiscounts,
   getDiscountByCode,
@@ -754,5 +752,4 @@ module.exports = {
   toggleDiscountStatus,
   incrementDiscountUsage,
   deleteDiscount
->>>>>>> c08cb7c576aa584d90aa88cc7ba1b54cf7955300
 };
