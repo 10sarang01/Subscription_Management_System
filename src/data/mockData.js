@@ -259,6 +259,21 @@ export const initialDiscounts = [
     usageLimit: 10,
     timesUsed: 10, // Exhausted/expired
     isActive: false
+  },
+  {
+    id: 'disc-4',
+    code: 'SEATBOOST10',
+    name: 'Multi-Seat Growth Deal (Scene 5)',
+    type: 'percentage',
+    value: 10,
+    scope: 'whole_subscription',
+    minQuantity: 3,
+    minAmount: 500,
+    startDate: '2026-01-01',
+    endDate: '2026-12-31',
+    usageLimit: 100,
+    timesUsed: 5,
+    isActive: true
   }
 ];
 

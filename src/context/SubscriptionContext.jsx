@@ -381,83 +381,297 @@ export function SubscriptionProvider({ children, initialUser }) {
     showToast(`Subscription updated to status: ${newStatus}`, 'info');
   };
 
-  // ── Billing Day Engine ────────────────────────────────────────────────
+  // ── Billing Day Engine: Scene 4 & 5 ───────────────────────────────────
 
-  const runBillingDay = () => {
+  // Helper to advance date by billing frequency
+  const advanceBillingDate = (dateStr, frequency = 'monthly') => {
+    const d = new Date(dateStr || Date.now());
+    switch (frequency) {
+      case 'daily':
+        d.setDate(d.getDate() + 1);
+        break;
+      case 'weekly':
+        d.setDate(d.getDate() + 7);
+        break;
+      case 'yearly':
+        d.setFullYear(d.getFullYear() + 1);
+        break;
+      case 'monthly':
+      default:
+        d.setMonth(d.getMonth() + 1);
+        break;
+    }
+    return d.toISOString().split('T')[0];
+  };
+
+  // Helper to compute invoice due date based on payment terms
+  const computeDueDate = (issueDateStr, paymentTerms = 'Net 15') => {
+    const issueDate = new Date(issueDateStr || Date.now());
+    let daysToAdd = 15;
+    if (paymentTerms === 'Net 30') daysToAdd = 30;
+    else if (paymentTerms === 'Net 60') daysToAdd = 60;
+    else if (paymentTerms === 'Due upon receipt') daysToAdd = 0;
+    issueDate.setDate(issueDate.getDate() + daysToAdd);
+    return issueDate.toISOString().split('T')[0];
+  };
+
+  // Inspection helper: returns subscriptions that are due vs already billed
+  const getDueSubscriptions = (targetDateStr = new Date().toISOString().split('T')[0]) => {
     const activeSubs = subscriptions.filter((s) => s.status === 'Active');
-    let generatedCount = 0;
-    const newInvoicesList = [];
+    const due = [];
+    const alreadyBilled = [];
 
     activeSubs.forEach((sub) => {
-      const alreadyInvoiced = invoices.some(
-        (inv) => inv.subscriptionNumber === sub.subNumber &&
-          inv.status !== 'Cancelled' &&
-          inv.issueDate === new Date().toISOString().split('T')[0]
-      );
+      const isAlreadyInvoiced = invoices.some((inv) => {
+        if (inv.subscriptionNumber !== sub.subNumber || inv.status === 'Cancelled') return false;
+        if (inv.issueDate === targetDateStr) return true;
+        if (sub.billingFrequency === 'monthly' && inv.issueDate?.slice(0, 7) === targetDateStr.slice(0, 7)) return true;
+        if (sub.billingFrequency === 'yearly' && inv.issueDate?.slice(0, 4) === targetDateStr.slice(0, 4)) return true;
+        return false;
+      });
 
-      if (!alreadyInvoiced) {
-        const subtotal = sub.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-
-        let discountDeduction = 0;
-        if (sub.discountCode) {
-          const discountRule = discounts.find(d => d.code === sub.discountCode && d.isActive);
-          if (discountRule) {
-            if (discountRule.type === 'percentage') {
-              discountDeduction = (subtotal * discountRule.value) / 100;
-            } else {
-              discountDeduction = Math.min(discountRule.value, subtotal);
-            }
-          }
+      if (isAlreadyInvoiced) {
+        alreadyBilled.push(sub);
+      } else {
+        const isDateDue = !sub.nextBillingDate || sub.nextBillingDate <= targetDateStr;
+        if (isDateDue) {
+          due.push(sub);
         }
-
-        const taxTotal = (subtotal - discountDeduction) * 0.10;
-        const total = (subtotal - discountDeduction) + taxTotal;
-
-        const newInvoice = {
-          id: `inv-${Date.now()}-${generatedCount}`,
-          invoiceNumber: `INV-2026-${String(invoices.length + generatedCount + 1).padStart(3, '0')}`,
-          subscriptionNumber: sub.subNumber,
-          customerName: sub.customerName,
-          customerEmail: sub.customerEmail,
-          issueDate: new Date().toISOString().split('T')[0],
-          dueDate: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
-          subtotal,
-          taxTotal,
-          discountAmount: discountDeduction,
-          total,
-          amountPaid: 0,
-          balance: total,
-          status: 'Confirmed',
-          items: sub.items.map(i => ({
-            name: `${i.name} (${i.variant || 'Standard'})`,
-            quantity: i.quantity,
-            unitPrice: i.unitPrice,
-            total: i.quantity * i.unitPrice
-          }))
-        };
-
-        newInvoicesList.push(newInvoice);
-        generatedCount++;
       }
+    });
+
+    return { due, alreadyBilled };
+  };
+
+  // Universal Discount Validator: Scene 5
+  const validateDiscount = ({
+    code,
+    items = [],
+    subtotal = 0,
+    date = new Date().toISOString().split('T')[0]
+  }) => {
+    if (!code || !code.trim()) return { valid: false, message: '' };
+    const cleanCode = code.trim().toUpperCase();
+    const rule = discounts.find((d) => d.code.toUpperCase() === cleanCode);
+
+    if (!rule) {
+      return { valid: false, message: `Coupon code "${cleanCode}" does not exist.` };
+    }
+    if (!rule.isActive) {
+      return { valid: false, message: `Discount rule "${rule.code}" is currently deactivated or inactive.` };
+    }
+    if (rule.endDate && date > rule.endDate) {
+      return { valid: false, message: `Discount code "${rule.code}" expired on ${rule.endDate}.` };
+    }
+    if (rule.startDate && date < rule.startDate) {
+      return { valid: false, message: `Discount code "${rule.code}" is not valid until ${rule.startDate}.` };
+    }
+    if (rule.usageLimit !== undefined && (rule.timesUsed || 0) >= rule.usageLimit) {
+      return { valid: false, message: `Discount limit reached: Capacity of ${rule.usageLimit} redemptions exhausted.` };
+    }
+
+    // Check volume threshold: "A customer wants a discount for taking more seats"
+    const totalQuantity = items.reduce((sum, it) => sum + (parseInt(it.quantity, 10) || 1), 0);
+    if (rule.minQuantity && totalQuantity < rule.minQuantity) {
+      return {
+        valid: false,
+        rule,
+        message: `Volume threshold: Requires at least ${rule.minQuantity} seats/units (currently taking ${totalQuantity}). Add ${rule.minQuantity - totalQuantity} more to qualify!`
+      };
+    }
+
+    // Check minimum spend
+    if (rule.minAmount && subtotal < rule.minAmount) {
+      return {
+        valid: false,
+        rule,
+        message: `Minimum spend: Requires at least $${rule.minAmount.toFixed(2)} (current: $${subtotal.toFixed(2)}).`
+      };
+    }
+
+    // Calculate deduction based on Scope (specific_product vs whole_subscription)
+    let deduction = 0;
+    if (rule.scope === 'specific_product' && rule.targetProductId) {
+      const eligibleItems = items.filter((it) => it.productId === rule.targetProductId);
+      const eligibleSubtotal = eligibleItems.reduce((sum, it) => sum + ((parseInt(it.quantity, 10) || 0) * (parseFloat(it.unitPrice) || 0)), 0);
+      if (eligibleSubtotal <= 0) {
+        return {
+          valid: false,
+          rule,
+          message: `Applies specifically to target product, which is not present in this contract.`
+        };
+      }
+      deduction = rule.type === 'percentage'
+        ? (eligibleSubtotal * rule.value) / 100
+        : Math.min(rule.value, eligibleSubtotal);
+    } else {
+      deduction = rule.type === 'percentage'
+        ? (subtotal * rule.value) / 100
+        : Math.min(rule.value, subtotal);
+    }
+
+    return {
+      valid: true,
+      rule,
+      deduction,
+      message: `✅ "${rule.name}" applied: ${rule.type === 'percentage' ? `${rule.value}% off` : `$${rule.value} off`} (-$${deduction.toFixed(2)})`
+    };
+  };
+
+  // Billing Day Engine: Scene 4 & Scene 5
+  const runBillingDay = (targetDateStr = new Date().toISOString().split('T')[0]) => {
+    const { due } = getDueSubscriptions(targetDateStr);
+    let generatedCount = 0;
+    let totalGeneratedAmount = 0;
+    const newInvoicesList = [];
+    const updatedSubIds = new Set();
+    const usedDiscountMap = {};
+
+    due.forEach((sub) => {
+      let subtotal = 0;
+      let taxTotal = 0;
+
+      const invoiceItems = sub.items.map((item) => {
+        const qty = parseInt(item.quantity, 10) || 1;
+        const price = parseFloat(item.unitPrice) || 0;
+        const lineSubtotal = qty * price;
+        subtotal += lineSubtotal;
+        const taxRate = item.taxRate !== undefined ? item.taxRate : 0.10;
+        const lineTax = lineSubtotal * taxRate;
+        taxTotal += lineTax;
+        return {
+          productId: item.productId,
+          name: `${item.name} (${item.variant || 'Standard Edition'})`,
+          quantity: qty,
+          unitPrice: price,
+          taxRate,
+          taxAmount: lineTax,
+          total: lineSubtotal + lineTax
+        };
+      });
+
+      let discountDeduction = 0;
+      let appliedDiscountRule = null;
+      if (sub.discountCode) {
+        const validation = validateDiscount({
+          code: sub.discountCode,
+          items: sub.items,
+          subtotal,
+          date: targetDateStr
+        });
+        if (validation.valid) {
+          discountDeduction = validation.deduction;
+          appliedDiscountRule = validation.rule;
+          usedDiscountMap[appliedDiscountRule.code] = (usedDiscountMap[appliedDiscountRule.code] || 0) + 1;
+        }
+      }
+
+      if (discountDeduction > 0 && subtotal > 0) {
+        const discountRatio = (subtotal - discountDeduction) / subtotal;
+        taxTotal = taxTotal * discountRatio;
+      }
+
+      const total = Math.max(0, subtotal - discountDeduction + taxTotal);
+      const dueDate = computeDueDate(targetDateStr, sub.paymentTerms);
+
+      const newInvoice = {
+        id: `inv-${Date.now()}-${generatedCount}`,
+        invoiceNumber: `INV-2026-${String(invoices.length + generatedCount + 1).padStart(3, '0')}`,
+        subscriptionNumber: sub.subNumber,
+        customerName: sub.customerName,
+        customerEmail: sub.customerEmail,
+        issueDate: targetDateStr,
+        dueDate,
+        billingPeriodStart: sub.nextBillingDate || targetDateStr,
+        billingPeriodEnd: advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency),
+        subtotal,
+        taxTotal,
+        discountAmount: discountDeduction,
+        discountCode: appliedDiscountRule ? appliedDiscountRule.code : null,
+        total,
+        amountPaid: 0,
+        balance: total,
+        status: 'Confirmed',
+        sentAt: null,
+        items: invoiceItems
+      };
+
+      newInvoicesList.push(newInvoice);
+      updatedSubIds.add(sub.id);
+      generatedCount++;
+      totalGeneratedAmount += total;
     });
 
     if (newInvoicesList.length > 0) {
       setInvoices((prev) => [...newInvoicesList, ...prev]);
-      showToast(`⚡ Billing Day Batch: ${newInvoicesList.length} invoices generated!`, 'success');
+
+      setSubscriptions((prev) =>
+        prev.map((sub) => {
+          if (updatedSubIds.has(sub.id)) {
+            const nextDate = advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency);
+            return {
+              ...sub,
+              lastBillingDate: targetDateStr,
+              nextBillingDate: nextDate
+            };
+          }
+          return sub;
+        })
+      );
+
+      if (Object.keys(usedDiscountMap).length > 0) {
+        setDiscounts((prev) =>
+          prev.map((d) => {
+            const count = usedDiscountMap[d.code];
+            if (count) {
+              const newTimesUsed = (d.timesUsed || 0) + count;
+              const hasRunOut = d.usageLimit && newTimesUsed >= d.usageLimit;
+              return {
+                ...d,
+                timesUsed: newTimesUsed,
+                isActive: hasRunOut ? false : d.isActive
+              };
+            }
+            return d;
+          })
+        );
+      }
+
+      showToast(
+        `⚡ Billing Day Run: ${newInvoicesList.length} invoices generated ($${totalGeneratedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })})! Next billing dates advanced.`,
+        'success'
+      );
     } else {
-      showToast('All active subscriptions have already been billed for this cycle.', 'info');
+      showToast(
+        `All active subscriptions are up to date for ${targetDateStr}. No subscriptions due (Double-billing prevented)!`,
+        'info'
+      );
     }
 
-    return generatedCount;
+    return { generatedCount, totalAmount: totalGeneratedAmount, invoices: newInvoicesList };
   };
 
-  // ── Invoice & Payment Actions ─────────────────────────────────────────
+  // ── Invoice Actions ───────────────────────────────────────────────────
 
   const confirmInvoice = (invoiceId) => {
     setInvoices((prev) =>
       prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: 'Confirmed' } : inv))
     );
-    showToast('Invoice confirmed and dispatched to customer.', 'success');
+    showToast('Invoice confirmed and queued for collection.', 'success');
+  };
+
+  const cancelInvoice = (invoiceId) => {
+    setInvoices((prev) =>
+      prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: 'Cancelled' } : inv))
+    );
+    showToast('Invoice has been cancelled.', 'info');
+  };
+
+  const sendInvoice = (invoiceId) => {
+    setInvoices((prev) =>
+      prev.map((inv) => (inv.id === invoiceId ? { ...inv, sentAt: new Date().toISOString() } : inv))
+    );
+    showToast('Invoice PDF dispatched via email to customer.', 'success');
   };
 
   const recordPayment = ({ invoiceId, amount, method, note, transactionRef }) => {
@@ -507,6 +721,12 @@ export function SubscriptionProvider({ children, initialUser }) {
     showToast(`Discount rule "${newDiscount.code}" created!`, 'success');
   };
 
+  const toggleDiscountStatus = (discountId) => {
+    setDiscounts((prev) =>
+      prev.map((d) => (d.id === discountId ? { ...d, isActive: !d.isActive } : d))
+    );
+    showToast('Discount status updated successfully', 'info');
+  };
   const sendPaymentReminder = (invoiceId) => {
     const inv = invoices.find((i) => i.id === invoiceId);
     showToast(`Payment reminder email sent to ${inv?.customerEmail || 'customer'} for ${inv?.invoiceNumber}`, 'info');
@@ -562,11 +782,16 @@ export function SubscriptionProvider({ children, initialUser }) {
         createSubscription,
         updateSubscriptionStatus,
         runBillingDay,
+        getDueSubscriptions,
         // Invoice actions
         confirmInvoice,
+        cancelInvoice,
+        sendInvoice,
         recordPayment,
         // Discount actions
         createDiscount,
+        toggleDiscountStatus,
+        validateDiscount,
         sendPaymentReminder,
         resetToDefaultData
       }}

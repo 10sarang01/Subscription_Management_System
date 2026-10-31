@@ -1,10 +1,26 @@
-const Database = require('better-sqlite3');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 
 // Database path for official SQLite database
 const DB_PATH = path.join(__dirname, '..', 'users.db');
-const db = new Database(DB_PATH);
+
+let db;
+try {
+  const Database = require('better-sqlite3');
+  db = new Database(DB_PATH);
+} catch (err) {
+  // Graceful fallback to Node.js v24 built-in SQLite driver when better-sqlite3 native bindings are unavailable
+  const { DatabaseSync } = require('node:sqlite');
+  const syncDb = new DatabaseSync(DB_PATH);
+  syncDb.pragma = (cmd) => {
+    try {
+      syncDb.exec(`PRAGMA ${cmd}`);
+    } catch (e) {
+      // pragma fallback
+    }
+  };
+  db = syncDb;
+}
 
 // Enable WAL mode and foreign keys
 db.pragma('journal_mode = WAL');
