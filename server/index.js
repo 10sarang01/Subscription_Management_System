@@ -4,7 +4,19 @@ const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { initDatabase, getUserByEmail, getUserById, getAllUsers, createUser } = require('./db');
+const {
+  initDatabase,
+  getUserByEmail,
+  getUserById,
+  getAllUsers,
+  createUser,
+  getAllProducts,
+  createProduct,
+  deleteProduct,
+  getAllPlans,
+  createPlan,
+  deletePlan
+} = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -236,6 +248,102 @@ app.post('/api/users/staff', authenticateToken, requireAdmin, async (req, res) =
   } catch (err) {
     console.error('Add staff error:', err);
     res.status(500).json({ error: 'Failed to add staff member.' });
+  }
+});
+// --- Products & Plans API (Scene 2: Launching a new plan) ---
+
+// Get all products
+app.get('/api/products', async (req, res) => {
+  try {
+    const products = await getAllProducts();
+    res.json({ products });
+  } catch (err) {
+    console.error('Fetch products error:', err);
+    res.status(500).json({ error: 'Failed to fetch products.' });
+  }
+});
+
+// Create new product
+app.post('/api/products', async (req, res) => {
+  const { name, type, salesPrice, costPrice, notes, hasOdooVariant, odooPriceOffset, variants } = req.body;
+  if (!name || salesPrice === undefined || costPrice === undefined) {
+    return res.status(400).json({ error: 'Product name, sales price, and cost price are required.' });
+  }
+
+  try {
+    const product = await createProduct({
+      name,
+      type: type || 'Software',
+      salesPrice,
+      costPrice,
+      notes,
+      hasOdooVariant,
+      odooPriceOffset: odooPriceOffset || 560,
+      variants: variants || []
+    });
+    res.status(201).json({ message: 'Product created successfully.', product });
+  } catch (err) {
+    console.error('Create product error:', err);
+    res.status(500).json({ error: 'Failed to create product.' });
+  }
+});
+
+// Delete product
+app.delete('/api/products/:id', async (req, res) => {
+  try {
+    await deleteProduct(req.params.id);
+    res.json({ message: 'Product deleted.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete product.' });
+  }
+});
+
+// Get all plans
+app.get('/api/plans', async (req, res) => {
+  try {
+    const plans = await getAllPlans();
+    res.json({ plans });
+  } catch (err) {
+    console.error('Fetch plans error:', err);
+    res.status(500).json({ error: 'Failed to fetch plans.' });
+  }
+});
+
+// Create new plan
+app.post('/api/plans', async (req, res) => {
+  const { name, cost, frequency, minQuantity, startDate, endDate, autoCloseOnEnd, canCloseEarly, canPause, canRenew, description } = req.body;
+  if (!name || cost === undefined || !frequency || !startDate || !endDate) {
+    return res.status(400).json({ error: 'Plan name, cost, billing frequency, and dates are required.' });
+  }
+
+  try {
+    const plan = await createPlan({
+      name,
+      cost,
+      frequency,
+      minQuantity: minQuantity || 1,
+      startDate,
+      endDate,
+      autoCloseOnEnd: autoCloseOnEnd !== false,
+      canCloseEarly: canCloseEarly !== false,
+      canPause: canPause !== false,
+      canRenew: canRenew !== false,
+      description
+    });
+    res.status(201).json({ message: 'Plan launched successfully.', plan });
+  } catch (err) {
+    console.error('Create plan error:', err);
+    res.status(500).json({ error: 'Failed to create plan.' });
+  }
+});
+
+// Delete plan
+app.delete('/api/plans/:id', async (req, res) => {
+  try {
+    await deletePlan(req.params.id);
+    res.json({ message: 'Plan deleted.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete plan.' });
   }
 });
 

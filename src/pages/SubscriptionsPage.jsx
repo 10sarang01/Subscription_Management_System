@@ -79,13 +79,13 @@ export default function SubscriptionsPage() {
   };
 
   const addItemRow = () => {
-    const defaultProd = products[0];
+    const defaultProd = products[0] || { id: 'custom', name: 'Software Item', salesPrice: 100, variants: [] };
     setFormItems([
       ...formItems,
       {
         productId: defaultProd.id,
         name: defaultProd.name,
-        variant: 'Standard Edition',
+        variant: defaultProd.variants?.[0]?.name || 'Standard Edition',
         quantity: 1,
         unitPrice: defaultProd.salesPrice,
         taxRate: 0.10

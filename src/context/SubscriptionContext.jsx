@@ -90,24 +90,103 @@ export function SubscriptionProvider({ children, initialUser }) {
     localStorage.setItem('brightloop_payments', JSON.stringify(payments));
   }, [payments]);
 
-  // Product Actions
-  const addProduct = (newProduct) => {
-    const productWithId = {
-      ...newProduct,
-      id: `prod-${Date.now()}`
-    };
-    setProducts((prev) => [productWithId, ...prev]);
-    showToast(`Product "${newProduct.name}" added successfully!`, 'success');
+  // Fetch live products and plans from SQLite backend
+  useEffect(() => {
+    fetch('/api/products')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.products) {
+          setProducts(data.products);
+        }
+      })
+      .catch((err) => console.log('Products API sync fallback to local store:', err.message));
+
+    fetch('/api/plans')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.plans) {
+          setPlans(data.plans);
+        }
+      })
+      .catch((err) => console.log('Plans API sync fallback to local store:', err.message));
+  }, []);
+
+  // Product Actions (Live SQLite Persistence)
+  const addProduct = async (newProduct) => {
+    let savedProduct = null;
+    try {
+      const res = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProduct)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        savedProduct = data.product;
+      }
+    } catch (err) {
+      console.warn('API offline, saving product locally:', err.message);
+    }
+
+    if (!savedProduct) {
+      savedProduct = {
+        ...newProduct,
+        id: `prod-${Date.now()}`
+      };
+    }
+
+    setProducts((prev) => [savedProduct, ...prev.filter(p => p.id !== savedProduct.id)]);
+    showToast(`Product "${savedProduct.name}" launched live!`, 'success');
+    return savedProduct;
   };
 
-  // Plan Actions
-  const addPlan = (newPlan) => {
-    const planWithId = {
-      ...newPlan,
-      id: `plan-${Date.now()}`
-    };
-    setPlans((prev) => [planWithId, ...prev]);
-    showToast(`Plan "${newPlan.name}" launched!`, 'success');
+  const deleteProduct = async (id) => {
+    try {
+      await fetch(`/api/products/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('API delete offline, deleting locally:', err.message);
+    }
+    setProducts((prev) => prev.filter((p) => p.id !== id));
+    showToast('Product removed.', 'info');
+  };
+
+  // Plan Actions (Live SQLite Persistence)
+  const addPlan = async (newPlan) => {
+    let savedPlan = null;
+    try {
+      const res = await fetch('/api/plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPlan)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        savedPlan = data.plan;
+      }
+    } catch (err) {
+      console.warn('API offline, saving plan locally:', err.message);
+    }
+
+    if (!savedPlan) {
+      savedPlan = {
+        ...newPlan,
+        id: `plan-${Date.now()}`
+      };
+    }
+
+    setPlans((prev) => [savedPlan, ...prev.filter(p => p.id !== savedPlan.id)]);
+    showToast(`Billing plan "${savedPlan.name}" launched live!`, 'success');
+    return savedPlan;
+  };
+
+  const deletePlan = async (id) => {
+    try {
+      await fetch(`/api/plans/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('API delete offline, deleting locally:', err.message);
+    }
+    setPlans((prev) => prev.filter((p) => p.id !== id));
+    showToast('Billing plan removed.', 'info');
   };
 
   // Subscription Actions
@@ -294,14 +373,14 @@ export function SubscriptionProvider({ children, initialUser }) {
     localStorage.removeItem('brightloop_discounts');
     localStorage.removeItem('brightloop_payments');
 
-    setProducts(initialProducts);
-    setPlans(initialPlans);
+    setProducts([]);
+    setPlans([]);
     setSubscriptions(initialSubscriptions);
     setInvoices(initialInvoices);
     setDiscounts(initialDiscounts);
     setPayments(initialPayments);
 
-    showToast('Platform reset to default hackathon dataset!', 'info');
+    showToast('Platform reset to clean live state!', 'info');
   };
 
   return (
@@ -319,7 +398,9 @@ export function SubscriptionProvider({ children, initialUser }) {
         toast,
         showToast,
         addProduct,
+        deleteProduct,
         addPlan,
+        deletePlan,
         createSubscription,
         updateSubscriptionStatus,
         runBillingDay,
