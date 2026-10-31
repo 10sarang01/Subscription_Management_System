@@ -619,17 +619,6 @@ export default function BillingPage() {
               
               {/* Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px' }}>
-                <div>
-                  <h2 style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--primary)', letterSpacing: '-0.02em' }}>
-                    BRIGHTLOOP <span style={{ color: 'var(--text-main)' }}>SYSTEMS</span>
-                  </h2>
-                  <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.5 }}>
-                    Enterprise Subscription & Cloud Platform Inc.<br />
-                    100 Tech Boulevard, Suite 400 • billing@brightloop.com<br />
-                    Tax ID / VAT: US-99238471
-                  </p>
-                </div>
-
                 <div style={{ textAlign: 'right' }}>
                   <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--text-main)', letterSpacing: '0.04em' }}>
                     INVOICE
@@ -749,10 +738,7 @@ export default function BillingPage() {
                 </div>
               </div>
 
-              {/* Footer Note */}
-              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', fontSize: '0.78rem', color: '#94a3b8', textAlign: 'center' }}>
-                Brightloop Systems Inc. • Remit payments via Bank Wire (ACH/SWIFT), Stripe or Online Portal.
-              </div>
+
 
             </div>
 

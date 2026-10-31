@@ -21,7 +21,6 @@ import {
   Store
 } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
-import { defaultPersonas } from '../data/mockData';
 import ThemeToggle from './ThemeToggle';
 
 export default function Layout({ onLogout }) {

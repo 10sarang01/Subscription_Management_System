@@ -27,14 +27,14 @@ export default function CustomerPortalPage() {
   } = useSubscription();
 
   // Find customer subscriptions and invoices
-  const customerEmail = currentPersona.email;
+  const customerEmail = currentPersona.email || '';
   const customerSubs = subscriptions.filter(
-    (s) => s.customerEmail.toLowerCase() === customerEmail.toLowerCase() || currentPersona.role === 'customer'
+    (s) => (s.customerEmail || '').toLowerCase() === customerEmail.toLowerCase() || currentPersona.role === 'customer'
   );
   const activeSub = customerSubs.find((s) => s.status === 'Active') || customerSubs[0];
 
   const customerInvoices = invoices.filter(
-    (i) => i.customerEmail.toLowerCase() === customerEmail.toLowerCase() || currentPersona.role === 'customer'
+    (i) => (i.customerEmail || '').toLowerCase() === customerEmail.toLowerCase() || currentPersona.role === 'customer'
   );
 
   // Self-service Add-ons toggles (Scene 2: "add-ons customers switch on and off")
@@ -70,10 +70,10 @@ export default function CustomerPortalPage() {
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>• Your account</span>
             </div>
             <h2 style={{ fontSize: '1.6rem', fontWeight: 800, marginTop: '8px', color: 'var(--text-main)' }}>
-              Welcome back, {currentPersona.name.split(' (')[0]}!
+              Welcome back, {currentPersona.full_name || currentPersona.name || currentPersona.email || 'there'}!
             </h2>
             <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-              Account Entity: <strong>{currentPersona.company}</strong> • Self-service subscription management without having to email support.
+              Account Entity: <strong>{currentPersona.company_name || currentPersona.company || '—'}</strong> • Self-service subscription management without having to email support.
             </p>
           </div>
 
