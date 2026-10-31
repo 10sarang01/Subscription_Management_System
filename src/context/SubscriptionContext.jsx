@@ -49,11 +49,29 @@ export function SubscriptionProvider({ children, initialUser }) {
     return saved ? JSON.parse(saved) : initialPayments;
   });
 
-  // Current active persona
+  // Helper to normalize user/persona object so both full_name/name and company_name/company work seamlessly
+  const normalizeUserData = (user) => {
+    if (!user) return defaultPersonas[0];
+    return {
+      ...user,
+      name: user.full_name || user.name || user.email || 'User',
+      company: user.company_name || user.company || 'Brightloop Systems',
+      role: user.role || 'staff'
+    };
+  };
+
+  // Current active persona / logged in user
   const [currentPersona, setCurrentPersona] = useState(() => {
-    if (initialUser) return initialUser;
+    if (initialUser) return normalizeUserData(initialUser);
     return defaultPersonas[0]; // Admin by default
   });
+
+  // Keep currentPersona synchronized when initialUser changes
+  useEffect(() => {
+    if (initialUser) {
+      setCurrentPersona(normalizeUserData(initialUser));
+    }
+  }, [initialUser]);
 
   // Toast notification
   const [toast, setToast] = useState(null);
