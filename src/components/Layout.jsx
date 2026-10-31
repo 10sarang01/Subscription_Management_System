@@ -226,16 +226,29 @@ export default function Layout({ onLogout }) {
 
         {/* Sidebar Footer: Persona Indicator & Quick Controls */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '16px', borderTop: '1px solid rgba(184, 194, 204, 0.3)' }}>
-          {/* Active Persona Box */}
+          {/* Signed-in User / Account Box */}
           <div className="neu-inset-sm" style={{ padding: '12px 14px' }}>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-              Current User Persona
+            <div
+              style={{
+                fontWeight: 800,
+                fontSize: '0.92rem',
+                color: 'var(--text-main)',
+                letterSpacing: '-0.01em',
+                lineHeight: 1.3
+              }}
+            >
+              {currentPersona.company || currentPersona.company_name || 'Brightloop Systems'}
             </div>
-            <div style={{ fontWeight: 800, fontSize: '0.88rem', marginTop: '2px', color: 'var(--text-main)' }}>
-              {currentPersona.name}
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 600 }}>
-              {currentPersona.company}
+            <div
+              style={{
+                fontSize: '0.78rem',
+                color: 'var(--text-muted)',
+                fontWeight: 500,
+                marginTop: '3px',
+                lineHeight: 1.2
+              }}
+            >
+              {currentPersona.name || currentPersona.full_name || currentPersona.email}
             </div>
           </div>
 
