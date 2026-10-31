@@ -15,7 +15,13 @@ const {
   deleteProduct,
   getAllPlans,
   createPlan,
-  deletePlan
+  deletePlan,
+  getPlansByProductId,
+  getAllProductPlans,
+  createProductPlan,
+  updateProductPlan,
+  toggleProductPlanStatus,
+  deleteProductPlan
 } = require('./db');
 
 const app = express();
@@ -29,8 +35,7 @@ app.use(express.json());
 // Initialize SQLite database
 initDatabase().catch(err => console.error('Failed to init SQLite DB:', err));
 
-// Password validation helper according to Brightloop spec:
-// > 8 chars, at least 1 uppercase, 1 lowercase, 1 special character
+// Password validation helper
 function validatePassword(password) {
   if (!password || password.length <= 8) {
     return { valid: false, message: 'Password must be more than 8 characters long.' };
@@ -81,7 +86,7 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// --- Auth Routes ---
+// ─── Auth Routes ──────────────────────────────────────────────────────────
 
 // Login
 app.post('/api/auth/login', async (req, res) => {
@@ -250,7 +255,8 @@ app.post('/api/users/staff', authenticateToken, requireAdmin, async (req, res) =
     res.status(500).json({ error: 'Failed to add staff member.' });
   }
 });
-// --- Products & Plans API (Scene 2: Launching a new plan) ---
+
+// ─── Products API ─────────────────────────────────────────────────────────
 
 // Get all products
 app.get('/api/products', async (req, res) => {
@@ -298,7 +304,149 @@ app.delete('/api/products/:id', async (req, res) => {
   }
 });
 
-// Get all plans
+// ─── Product-scoped Plans API ─────────────────────────────────────────────
+
+// GET /api/products/:productId/plans — list all plans for a product
+app.get('/api/products/:productId/plans', async (req, res) => {
+  try {
+    const plans = await getPlansByProductId(req.params.productId);
+    res.json({ plans });
+  } catch (err) {
+    console.error('Fetch product plans error:', err);
+    res.status(500).json({ error: 'Failed to fetch plans for product.' });
+  }
+});
+
+// POST /api/products/:productId/plans — create a plan for a product (admin only)
+app.post('/api/products/:productId/plans', authenticateToken, requireAdmin, async (req, res) => {
+  const { productId } = req.params;
+  const {
+    name, price, billingInterval, minimumQuantity,
+    availableFrom, availableUntil,
+    autoClose, allowEarlyClose, allowPause, allowRenew,
+    description
+  } = req.body;
+
+  if (!name || price === undefined || !billingInterval || !availableFrom || !availableUntil) {
+    return res.status(400).json({
+      error: 'Plan name, price, billing interval, and availability dates are required.'
+    });
+  }
+
+  const validIntervals = ['daily', 'weekly', 'monthly', 'yearly'];
+  if (!validIntervals.includes(billingInterval)) {
+    return res.status(400).json({ error: 'Billing interval must be daily, weekly, monthly, or yearly.' });
+  }
+
+  if (parseFloat(price) < 0) {
+    return res.status(400).json({ error: 'Plan price cannot be negative.' });
+  }
+
+  try {
+    const row = await createProductPlan({
+      productId,
+      name,
+      price: parseFloat(price),
+      billingInterval,
+      minimumQuantity: parseInt(minimumQuantity) || 1,
+      availableFrom,
+      availableUntil,
+      autoClose: autoClose !== false,
+      allowEarlyClose: allowEarlyClose !== false,
+      allowPause: allowPause !== false,
+      allowRenew: allowRenew !== false,
+      description: description || ''
+    });
+
+    // Map raw row to camelCase
+    const plan = {
+      id: row.id,
+      productId: row.product_id,
+      name: row.name,
+      price: row.price,
+      billingInterval: row.billing_interval,
+      minimumQuantity: row.minimum_quantity,
+      availableFrom: row.available_from,
+      availableUntil: row.available_until,
+      autoClose: Boolean(row.auto_close),
+      allowEarlyClose: Boolean(row.allow_early_close),
+      allowPause: Boolean(row.allow_pause),
+      allowRenew: Boolean(row.allow_renew),
+      isActive: Boolean(row.is_active),
+      description: row.description || '',
+      createdAt: row.created_at
+    };
+
+    res.status(201).json({ message: 'Plan created successfully.', plan });
+  } catch (err) {
+    console.error('Create product plan error:', err);
+    res.status(500).json({ error: 'Failed to create plan.' });
+  }
+});
+
+// PUT /api/plans/:planId — update a product plan (admin only)
+app.put('/api/plans/:planId', authenticateToken, requireAdmin, async (req, res) => {
+  const { planId } = req.params;
+  const {
+    name, price, billingInterval, minimumQuantity,
+    availableFrom, availableUntil,
+    autoClose, allowEarlyClose, allowPause, allowRenew,
+    description
+  } = req.body;
+
+  try {
+    const updated = await updateProductPlan(planId, {
+      name, price, billingInterval, minimumQuantity,
+      availableFrom, availableUntil,
+      autoClose, allowEarlyClose, allowPause, allowRenew,
+      description
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Plan not found.' });
+    }
+
+    res.json({ message: 'Plan updated successfully.', plan: updated });
+  } catch (err) {
+    console.error('Update plan error:', err);
+    res.status(500).json({ error: 'Failed to update plan.' });
+  }
+});
+
+// PATCH /api/plans/:planId/status — activate or deactivate a plan (admin only)
+app.patch('/api/plans/:planId/status', authenticateToken, requireAdmin, async (req, res) => {
+  const { planId } = req.params;
+  const { isActive } = req.body;
+
+  if (typeof isActive !== 'boolean') {
+    return res.status(400).json({ error: 'isActive must be a boolean.' });
+  }
+
+  try {
+    const updated = await toggleProductPlanStatus(planId, isActive);
+    if (!updated) {
+      return res.status(404).json({ error: 'Plan not found.' });
+    }
+    res.json({ message: `Plan ${isActive ? 'activated' : 'deactivated'} successfully.`, plan: updated });
+  } catch (err) {
+    console.error('Toggle plan status error:', err);
+    res.status(500).json({ error: 'Failed to update plan status.' });
+  }
+});
+
+// DELETE /api/plans/:planId — delete a product plan (admin only)
+app.delete('/api/plans/:planId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await deleteProductPlan(req.params.planId);
+    res.json({ message: 'Plan deleted.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete plan.' });
+  }
+});
+
+// ─── Legacy Global Plans API (backward compatibility) ─────────────────────
+
+// Get all legacy global plans
 app.get('/api/plans', async (req, res) => {
   try {
     const plans = await getAllPlans();
@@ -309,45 +457,8 @@ app.get('/api/plans', async (req, res) => {
   }
 });
 
-// Create new plan
-app.post('/api/plans', async (req, res) => {
-  const { name, cost, frequency, minQuantity, startDate, endDate, autoCloseOnEnd, canCloseEarly, canPause, canRenew, description } = req.body;
-  if (!name || cost === undefined || !frequency || !startDate || !endDate) {
-    return res.status(400).json({ error: 'Plan name, cost, billing frequency, and dates are required.' });
-  }
+// ─── Serve static frontend in production ─────────────────────────────────
 
-  try {
-    const plan = await createPlan({
-      name,
-      cost,
-      frequency,
-      minQuantity: minQuantity || 1,
-      startDate,
-      endDate,
-      autoCloseOnEnd: autoCloseOnEnd !== false,
-      canCloseEarly: canCloseEarly !== false,
-      canPause: canPause !== false,
-      canRenew: canRenew !== false,
-      description
-    });
-    res.status(201).json({ message: 'Plan launched successfully.', plan });
-  } catch (err) {
-    console.error('Create plan error:', err);
-    res.status(500).json({ error: 'Failed to create plan.' });
-  }
-});
-
-// Delete plan
-app.delete('/api/plans/:id', async (req, res) => {
-  try {
-    await deletePlan(req.params.id);
-    res.json({ message: 'Plan deleted.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete plan.' });
-  }
-});
-
-// Serve static frontend in production if built
 const distPath = path.join(__dirname, '..', 'dist');
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
@@ -361,5 +472,5 @@ if (fs.existsSync(distPath)) {
 
 // Start Express Server
 app.listen(PORT, () => {
-  console.log(`🚀 Brightloop SQLite (https://www.sqlite.org) Auth & Users API server listening on http://localhost:${PORT}`);
+  console.log(`🚀 Brightloop API server listening on http://localhost:${PORT}`);
 });

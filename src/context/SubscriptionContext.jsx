@@ -1,7 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   initialProducts,
-  initialPlans,
   initialQuotationTemplates,
   initialSubscriptions,
   initialInvoices,
@@ -13,15 +12,17 @@ import {
 const SubscriptionContext = createContext();
 
 export function SubscriptionProvider({ children, initialUser }) {
-  // Load initial states with localStorage persistence
+  // ── Products (localStorage persisted) ──────────────────────────────────
   const [products, setProducts] = useState(() => {
     const saved = localStorage.getItem('brightloop_products');
     return saved ? JSON.parse(saved) : initialProducts;
   });
 
-  const [plans, setPlans] = useState(() => {
-    const saved = localStorage.getItem('brightloop_plans');
-    return saved ? JSON.parse(saved) : initialPlans;
+  // ── Product-scoped plans: { [productId]: Plan[] } ──────────────────────
+  // Persisted in localStorage as well; synced from backend when available
+  const [productPlans, setProductPlans] = useState(() => {
+    const saved = localStorage.getItem('brightloop_product_plans');
+    return saved ? JSON.parse(saved) : {};
   });
 
   const [quotationTemplates, setQuotationTemplates] = useState(() => {
@@ -49,48 +50,28 @@ export function SubscriptionProvider({ children, initialUser }) {
     return saved ? JSON.parse(saved) : initialPayments;
   });
 
-  // Helper to normalize user/persona object so both full_name/name and company_name/company work seamlessly
-  const normalizeUserData = (user) => {
-    if (!user) return defaultPersonas[0];
-    return {
-      ...user,
-      name: user.full_name || user.name || user.email || 'User',
-      company: user.company_name || user.company || 'Brightloop Systems',
-      role: user.role || 'staff'
-    };
-  };
-
-  // Current active persona / logged in user
+  // Current active persona
   const [currentPersona, setCurrentPersona] = useState(() => {
-    if (initialUser) return normalizeUserData(initialUser);
-    return defaultPersonas[0]; // Admin by default
+    if (initialUser) return initialUser;
+    return defaultPersonas[0];
   });
-
-  // Keep currentPersona synchronized when initialUser changes
-  useEffect(() => {
-    if (initialUser) {
-      setCurrentPersona(normalizeUserData(initialUser));
-    }
-  }, [initialUser]);
 
   // Toast notification
   const [toast, setToast] = useState(null);
 
   const showToast = (message, type = 'info') => {
     setToast({ id: Date.now(), message, type });
-    setTimeout(() => {
-      setToast(null);
-    }, 4000);
+    setTimeout(() => setToast(null), 4000);
   };
 
-  // Sync to localStorage
+  // ── localStorage sync ─────────────────────────────────────────────────
   useEffect(() => {
     localStorage.setItem('brightloop_products', JSON.stringify(products));
   }, [products]);
 
   useEffect(() => {
-    localStorage.setItem('brightloop_plans', JSON.stringify(plans));
-  }, [plans]);
+    localStorage.setItem('brightloop_product_plans', JSON.stringify(productPlans));
+  }, [productPlans]);
 
   useEffect(() => {
     localStorage.setItem('brightloop_subscriptions', JSON.stringify(subscriptions));
@@ -111,8 +92,8 @@ export function SubscriptionProvider({ children, initialUser }) {
   // Note: Products and plans are persisted in localStorage.
   // Backend sync happens on individual add/delete operations (with graceful fallback).
 
+  // ── Product Actions ───────────────────────────────────────────────────
 
-  // Product Actions (Live SQLite Persistence)
   const addProduct = async (newProduct) => {
     let savedProduct = null;
     try {
@@ -125,74 +106,190 @@ export function SubscriptionProvider({ children, initialUser }) {
         const data = await res.json();
         savedProduct = data.product;
       }
-    } catch (err) {
-      console.warn('API offline, saving product locally:', err.message);
+    } catch {
+      // API offline, saving locally
     }
 
     if (!savedProduct) {
-      savedProduct = {
-        ...newProduct,
-        id: `prod-${Date.now()}`
-      };
+      savedProduct = { ...newProduct, id: `prod-${Date.now()}` };
     }
 
     setProducts((prev) => [savedProduct, ...prev.filter(p => p.id !== savedProduct.id)]);
-    showToast(`Product "${savedProduct.name}" launched live!`, 'success');
+    // Initialize empty plans array for this product
+    setProductPlans((prev) => ({ ...prev, [savedProduct.id]: prev[savedProduct.id] || [] }));
+    showToast(`Product "${savedProduct.name}" created!`, 'success');
     return savedProduct;
   };
 
   const deleteProduct = async (id) => {
     try {
       await fetch(`/api/products/${id}`, { method: 'DELETE' });
-    } catch (err) {
-      console.warn('API delete offline, deleting locally:', err.message);
+    } catch {
+      // offline
     }
     setProducts((prev) => prev.filter((p) => p.id !== id));
-    showToast('Product removed.', 'info');
+    // Remove associated plans
+    setProductPlans((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    showToast('Product and its plans removed.', 'info');
   };
 
-  // Plan Actions (Live SQLite Persistence)
-  const addPlan = async (newPlan) => {
+  // ── Product-scoped Plan Actions ───────────────────────────────────────
+
+  /**
+   * Get all plans for a specific product (from state, optionally refresh from API)
+   */
+  const getPlansForProduct = useCallback((productId) => {
+    return productPlans[productId] || [];
+  }, [productPlans]);
+
+  /**
+   * Fetch plans for a product from the backend and merge into state
+   */
+  const fetchPlansForProduct = useCallback(async (productId, authToken) => {
+    try {
+      const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
+      const res = await fetch(`/api/products/${productId}/plans`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setProductPlans((prev) => ({ ...prev, [productId]: data.plans }));
+        return data.plans;
+      }
+    } catch {
+      // Backend offline – using local state
+    }
+    return productPlans[productId] || [];
+  }, [productPlans]);
+
+  /**
+   * Add a new plan to a product
+   */
+  const addProductPlan = async (productId, planData, authToken) => {
     let savedPlan = null;
     try {
-      const res = await fetch('/api/plans', {
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      };
+      const res = await fetch(`/api/products/${productId}/plans`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPlan)
+        headers,
+        body: JSON.stringify(planData)
       });
       if (res.ok) {
         const data = await res.json();
         savedPlan = data.plan;
       }
-    } catch (err) {
-      console.warn('API offline, saving plan locally:', err.message);
+    } catch {
+      // offline
     }
 
     if (!savedPlan) {
       savedPlan = {
-        ...newPlan,
-        id: `plan-${Date.now()}`
+        ...planData,
+        id: `pp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        productId,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
     }
 
-    setPlans((prev) => [savedPlan, ...prev.filter(p => p.id !== savedPlan.id)]);
-    showToast(`Billing plan "${savedPlan.name}" launched live!`, 'success');
+    setProductPlans((prev) => ({
+      ...prev,
+      [productId]: [...(prev[productId] || []), savedPlan]
+    }));
+    showToast(`Plan "${savedPlan.name}" added to product!`, 'success');
     return savedPlan;
   };
 
-  const deletePlan = async (id) => {
+  /**
+   * Update an existing product plan
+   */
+  const updateProductPlan = async (planId, productId, updates, authToken) => {
+    let updatedPlan = null;
     try {
-      await fetch(`/api/plans/${id}`, { method: 'DELETE' });
-    } catch (err) {
-      console.warn('API delete offline, deleting locally:', err.message);
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      };
+      const res = await fetch(`/api/plans/${planId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(updates)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        updatedPlan = data.plan;
+      }
+    } catch {
+      // offline
     }
-    setPlans((prev) => prev.filter((p) => p.id !== id));
-    showToast('Billing plan removed.', 'info');
+
+    setProductPlans((prev) => {
+      const current = prev[productId] || [];
+      const next = current.map((p) => {
+        if (p.id !== planId) return p;
+        return updatedPlan || { ...p, ...updates, updatedAt: new Date().toISOString() };
+      });
+      return { ...prev, [productId]: next };
+    });
+    showToast('Plan updated successfully!', 'success');
   };
 
-  // Subscription Actions
+  /**
+   * Toggle plan active/inactive status
+   */
+  const toggleProductPlan = async (planId, productId, isActive, authToken) => {
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+      };
+      await fetch(`/api/plans/${planId}/status`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ isActive })
+      });
+    } catch {
+      // offline
+    }
+
+    setProductPlans((prev) => {
+      const current = prev[productId] || [];
+      const next = current.map((p) =>
+        p.id === planId ? { ...p, isActive } : p
+      );
+      return { ...prev, [productId]: next };
+    });
+    showToast(`Plan ${isActive ? 'activated' : 'deactivated'}.`, 'info');
+  };
+
+  /**
+   * Delete a product plan
+   */
+  const deleteProductPlan = async (planId, productId, authToken) => {
+    try {
+      const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
+      await fetch(`/api/plans/${planId}`, { method: 'DELETE', headers });
+    } catch {
+      // offline
+    }
+
+    setProductPlans((prev) => {
+      const current = prev[productId] || [];
+      return { ...prev, [productId]: current.filter((p) => p.id !== planId) };
+    });
+    showToast('Plan removed.', 'info');
+  };
+
+  // ── Subscription Actions ──────────────────────────────────────────────
+
   const createSubscription = (quoteData) => {
-    const subNumber = quoteData.status === 'Draft' 
+    const subNumber = quoteData.status === 'Draft'
       ? `QT-2026-${Math.floor(100 + Math.random() * 900)}`
       : `SUB-2026-${Math.floor(100 + Math.random() * 900)}`;
 
@@ -212,7 +309,6 @@ export function SubscriptionProvider({ children, initialUser }) {
     setSubscriptions((prev) =>
       prev.map((sub) => {
         if (sub.id === id) {
-          // If moving from Quote to Confirmed or Active, assign formal SUB- if it had QT-
           let subNumber = sub.subNumber;
           if (subNumber.startsWith('QT-') && (newStatus === 'Confirmed' || newStatus === 'Active')) {
             subNumber = `SUB-2026-${Math.floor(100 + Math.random() * 900)}`;
@@ -225,211 +321,85 @@ export function SubscriptionProvider({ children, initialUser }) {
     showToast(`Subscription updated to status: ${newStatus}`, 'info');
   };
 
-  // Billing Day Engine: Scene 4 in Problem Statement
-  // Automatically generates invoices for active subscriptions and prevents double billing
-  // Helper to advance date by billing interval
-  const advanceBillingDate = (dateStr, frequency) => {
-    const d = new Date(dateStr || new Date());
-    if (isNaN(d.getTime())) return new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
-    switch (frequency?.toLowerCase()) {
-      case 'daily':
-        d.setDate(d.getDate() + 1);
-        break;
-      case 'weekly':
-        d.setDate(d.getDate() + 7);
-        break;
-      case 'yearly':
-        d.setFullYear(d.getFullYear() + 1);
-        break;
-      case 'monthly':
-      default:
-        d.setMonth(d.getMonth() + 1);
-        break;
-    }
-    return d.toISOString().split('T')[0];
-  };
+  // ── Billing Day Engine ────────────────────────────────────────────────
 
-  // Helper to calculate due date from payment terms
-  const computeDueDate = (issueDateStr, terms) => {
-    const d = new Date(issueDateStr);
-    if (terms?.includes('15')) d.setDate(d.getDate() + 15);
-    else if (terms?.includes('30')) d.setDate(d.getDate() + 30);
-    else if (terms?.includes('60')) d.setDate(d.getDate() + 60);
-    else if (terms?.toLowerCase().includes('immediate') || terms?.toLowerCase().includes('receipt')) d.setDate(d.getDate() + 1);
-    else d.setDate(d.getDate() + 15);
-    return d.toISOString().split('T')[0];
-  };
-
-  // Inspection helper: returns subscriptions that are due vs already billed
-  const getDueSubscriptions = (targetDateStr = new Date().toISOString().split('T')[0]) => {
+  const runBillingDay = () => {
     const activeSubs = subscriptions.filter((s) => s.status === 'Active');
-    const due = [];
-    const alreadyBilled = [];
+    let generatedCount = 0;
+    const newInvoicesList = [];
 
     activeSubs.forEach((sub) => {
-      // Check if an invoice was already generated for this cycle
-      const isAlreadyInvoiced = invoices.some((inv) => {
-        if (inv.subscriptionNumber !== sub.subNumber || inv.status === 'Cancelled') return false;
-        if (inv.issueDate === targetDateStr) return true;
-        if (sub.billingFrequency === 'monthly' && inv.issueDate?.slice(0, 7) === targetDateStr.slice(0, 7)) return true;
-        if (sub.billingFrequency === 'yearly' && inv.issueDate?.slice(0, 4) === targetDateStr.slice(0, 4)) return true;
-        return false;
-      });
+      const alreadyInvoiced = invoices.some(
+        (inv) => inv.subscriptionNumber === sub.subNumber &&
+          inv.status !== 'Cancelled' &&
+          inv.issueDate === new Date().toISOString().split('T')[0]
+      );
 
-      if (isAlreadyInvoiced) {
-        alreadyBilled.push(sub);
-      } else {
-        // Due if nextBillingDate is on or before target date, or if no date is set
-        const isDateDue = !sub.nextBillingDate || sub.nextBillingDate <= targetDateStr;
-        if (isDateDue) {
-          due.push(sub);
-        }
-      }
-    });
+      if (!alreadyInvoiced) {
+        const subtotal = sub.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
 
-    return { due, alreadyBilled };
-  };
-
-  // Billing Day Engine: Scene 4 in Problem Statement
-  // Automatically generates invoices for active subscriptions and prevents double billing
-  const runBillingDay = (targetDateStr = new Date().toISOString().split('T')[0]) => {
-    const { due } = getDueSubscriptions(targetDateStr);
-    let generatedCount = 0;
-    let totalGeneratedAmount = 0;
-    const newInvoicesList = [];
-    const updatedSubIds = new Set();
-
-    due.forEach((sub) => {
-      // Calculate subtotal from items
-      let subtotal = 0;
-      let taxTotal = 0;
-
-      const invoiceItems = sub.items.map((item) => {
-        const lineSubtotal = item.quantity * item.unitPrice;
-        subtotal += lineSubtotal;
-        const taxRate = item.taxRate !== undefined ? item.taxRate : 0.10;
-        const lineTax = lineSubtotal * taxRate;
-        taxTotal += lineTax;
-        return {
-          productId: item.productId,
-          name: `${item.name} (${item.variant || 'Standard Edition'})`,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          taxRate,
-          taxAmount: lineTax,
-          total: lineSubtotal + lineTax
-        };
-      });
-
-      // Calculate discounts
-      let discountDeduction = 0;
-      if (sub.discountCode) {
-        const discountRule = discounts.find((d) => d.code === sub.discountCode && d.isActive);
-        if (discountRule) {
-          if (discountRule.type === 'percentage') {
-            discountDeduction = (subtotal * discountRule.value) / 100;
-          } else {
-            discountDeduction = Math.min(discountRule.value, subtotal);
+        let discountDeduction = 0;
+        if (sub.discountCode) {
+          const discountRule = discounts.find(d => d.code === sub.discountCode && d.isActive);
+          if (discountRule) {
+            if (discountRule.type === 'percentage') {
+              discountDeduction = (subtotal * discountRule.value) / 100;
+            } else {
+              discountDeduction = Math.min(discountRule.value, subtotal);
+            }
           }
         }
+
+        const taxTotal = (subtotal - discountDeduction) * 0.10;
+        const total = (subtotal - discountDeduction) + taxTotal;
+
+        const newInvoice = {
+          id: `inv-${Date.now()}-${generatedCount}`,
+          invoiceNumber: `INV-2026-${String(invoices.length + generatedCount + 1).padStart(3, '0')}`,
+          subscriptionNumber: sub.subNumber,
+          customerName: sub.customerName,
+          customerEmail: sub.customerEmail,
+          issueDate: new Date().toISOString().split('T')[0],
+          dueDate: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
+          subtotal,
+          taxTotal,
+          discountAmount: discountDeduction,
+          total,
+          amountPaid: 0,
+          balance: total,
+          status: 'Confirmed',
+          items: sub.items.map(i => ({
+            name: `${i.name} (${i.variant || 'Standard'})`,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            total: i.quantity * i.unitPrice
+          }))
+        };
+
+        newInvoicesList.push(newInvoice);
+        generatedCount++;
       }
-
-      // Proportional tax adjustment if discount applies
-      if (discountDeduction > 0 && subtotal > 0) {
-        const discountRatio = (subtotal - discountDeduction) / subtotal;
-        taxTotal = taxTotal * discountRatio;
-      }
-
-      const total = Math.max(0, subtotal - discountDeduction + taxTotal);
-      const dueDate = computeDueDate(targetDateStr, sub.paymentTerms);
-
-      const newInvoice = {
-        id: `inv-${Date.now()}-${generatedCount}`,
-        invoiceNumber: `INV-2026-${String(invoices.length + generatedCount + 1).padStart(3, '0')}`,
-        subscriptionNumber: sub.subNumber,
-        customerName: sub.customerName,
-        customerEmail: sub.customerEmail,
-        issueDate: targetDateStr,
-        dueDate,
-        billingPeriodStart: sub.nextBillingDate || targetDateStr,
-        billingPeriodEnd: advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency),
-        subtotal,
-        taxTotal,
-        discountAmount: discountDeduction,
-        discountCode: sub.discountCode || null,
-        total,
-        amountPaid: 0,
-        balance: total,
-        status: 'Confirmed', // Scene 4: Moves from Draft to Confirmed to Paid
-        sentAt: null,
-        items: invoiceItems
-      };
-
-      newInvoicesList.push(newInvoice);
-      updatedSubIds.add(sub.id);
-      generatedCount++;
-      totalGeneratedAmount += total;
     });
 
     if (newInvoicesList.length > 0) {
-      // 1. Add generated invoices
       setInvoices((prev) => [...newInvoicesList, ...prev]);
-
-      // 2. Advance nextBillingDate for billed subscriptions
-      setSubscriptions((prev) =>
-        prev.map((sub) => {
-          if (updatedSubIds.has(sub.id)) {
-            const nextDate = advanceBillingDate(sub.nextBillingDate || targetDateStr, sub.billingFrequency);
-            return {
-              ...sub,
-              lastBillingDate: targetDateStr,
-              nextBillingDate: nextDate
-            };
-          }
-          return sub;
-        })
-      );
-
-      showToast(
-        `⚡ Billing Day Run: ${newInvoicesList.length} invoices generated ($${totalGeneratedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })})! Next billing dates advanced.`,
-        'success'
-      );
+      showToast(`⚡ Billing Day Batch: ${newInvoicesList.length} invoices generated!`, 'success');
     } else {
-      showToast(
-        `All active subscriptions are up to date for ${targetDateStr}. No subscriptions due (Double-billing prevented)!`,
-        'info'
-      );
+      showToast('All active subscriptions have already been billed for this cycle.', 'info');
     }
 
-    return { generatedCount, totalAmount: totalGeneratedAmount, invoices: newInvoicesList };
+    return generatedCount;
   };
 
-  // Invoice Confirmation: Draft -> Confirmed
+  // ── Invoice & Payment Actions ─────────────────────────────────────────
+
   const confirmInvoice = (invoiceId) => {
     setInvoices((prev) =>
       prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: 'Confirmed' } : inv))
     );
-    showToast('Invoice confirmed and queued for collection.', 'success');
+    showToast('Invoice confirmed and dispatched to customer.', 'success');
   };
 
-  // Invoice Cancellation: Scene 4
-  const cancelInvoice = (invoiceId) => {
-    setInvoices((prev) =>
-      prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: 'Cancelled', balance: 0 } : inv))
-    );
-    showToast('Invoice cancelled. Balance zeroed.', 'info');
-  };
-
-  // Send Invoice to Customer: Scene 4
-  const sendInvoice = (invoiceId) => {
-    const target = invoices.find((inv) => inv.id === invoiceId);
-    setInvoices((prev) =>
-      prev.map((inv) => (inv.id === invoiceId ? { ...inv, sentAt: new Date().toISOString() } : inv))
-    );
-    showToast(`Invoice ${target ? target.invoiceNumber : ''} dispatched to customer inbox.`, 'success');
-  };
-
-  // Payment Recording: Scene 6
   const recordPayment = ({ invoiceId, amount, method, note, transactionRef }) => {
     const targetInvoice = invoices.find((inv) => inv.id === invoiceId);
     if (!targetInvoice) return;
@@ -439,21 +409,14 @@ export function SubscriptionProvider({ children, initialUser }) {
     const newBalance = Math.max(0, targetInvoice.total - newPaidTotal);
     const newStatus = newBalance <= 0.01 ? 'Paid' : 'Partially Paid';
 
-    // Update invoice
     setInvoices((prev) =>
       prev.map((inv) =>
         inv.id === invoiceId
-          ? {
-              ...inv,
-              amountPaid: newPaidTotal,
-              balance: newBalance,
-              status: newStatus
-            }
+          ? { ...inv, amountPaid: newPaidTotal, balance: newBalance, status: newStatus }
           : inv
       )
     );
 
-    // Add payment entry
     const newPayment = {
       id: `pay-${Date.now()}`,
       paymentNumber: `PAY-2026-${String(payments.length + 1).padStart(3, '0')}`,
@@ -471,7 +434,8 @@ export function SubscriptionProvider({ children, initialUser }) {
     showToast(`Payment of $${paymentAmount.toFixed(2)} recorded for ${targetInvoice.invoiceNumber}`, 'success');
   };
 
-  // Discount Rule Creation: Scene 5 (Admin Restricted)
+  // ── Discount Actions ──────────────────────────────────────────────────
+
   const createDiscount = (discountData) => {
     const newDiscount = {
       ...discountData,
@@ -483,23 +447,23 @@ export function SubscriptionProvider({ children, initialUser }) {
     showToast(`Discount rule "${newDiscount.code}" created!`, 'success');
   };
 
-  // Send Overdue Reminder
   const sendPaymentReminder = (invoiceId) => {
     const inv = invoices.find((i) => i.id === invoiceId);
     showToast(`Payment reminder email sent to ${inv?.customerEmail || 'customer'} for ${inv?.invoiceNumber}`, 'info');
   };
 
-  // Reset to default sample data
+  // ── Reset ─────────────────────────────────────────────────────────────
+
   const resetToDefaultData = () => {
     localStorage.removeItem('brightloop_products');
-    localStorage.removeItem('brightloop_plans');
+    localStorage.removeItem('brightloop_product_plans');
     localStorage.removeItem('brightloop_subscriptions');
     localStorage.removeItem('brightloop_invoices');
     localStorage.removeItem('brightloop_discounts');
     localStorage.removeItem('brightloop_payments');
 
     setProducts([]);
-    setPlans([]);
+    setProductPlans({});
     setSubscriptions(initialSubscriptions);
     setInvoices(initialInvoices);
     setDiscounts(initialDiscounts);
@@ -511,8 +475,9 @@ export function SubscriptionProvider({ children, initialUser }) {
   return (
     <SubscriptionContext.Provider
       value={{
+        // Data
         products,
-        plans,
+        productPlans,
         quotationTemplates,
         subscriptions,
         invoices,
@@ -522,18 +487,24 @@ export function SubscriptionProvider({ children, initialUser }) {
         setCurrentPersona,
         toast,
         showToast,
+        // Product actions
         addProduct,
         deleteProduct,
-        addPlan,
-        deletePlan,
+        // Product-scoped plan actions
+        getPlansForProduct,
+        fetchPlansForProduct,
+        addProductPlan,
+        updateProductPlan,
+        toggleProductPlan,
+        deleteProductPlan,
+        // Subscription actions
         createSubscription,
         updateSubscriptionStatus,
         runBillingDay,
-        getDueSubscriptions,
+        // Invoice actions
         confirmInvoice,
-        cancelInvoice,
-        sendInvoice,
         recordPayment,
+        // Discount actions
         createDiscount,
         sendPaymentReminder,
         resetToDefaultData
