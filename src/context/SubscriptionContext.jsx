@@ -10,6 +10,43 @@ import {
 } from '../data/mockData';
 
 const SubscriptionContext = createContext();
+function getLocalDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToDateString(dateString, days) {
+  if (!dateString || !Number.isFinite(Number(days))) return '';
+  const [year, month, day] = dateString.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + Number(days));
+  return date.toISOString().slice(0, 10);
+}
+
+function getNextDocumentNumber(prefix, existingSubscriptions, date = new Date()) {
+  const year = date.getFullYear();
+  const pattern = new RegExp(`^${prefix}-${year}-(\\d+)$`);
+  const existingNumbers = new Set(existingSubscriptions.map((sub) => sub.subNumber).filter(Boolean));
+  let nextSequence = existingSubscriptions.reduce((highest, sub) => {
+    const match = String(sub.subNumber || '').match(pattern);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0) + 1;
+  let candidate = `${prefix}-${year}-${String(nextSequence).padStart(3, '0')}`;
+  while (existingNumbers.has(candidate)) {
+    nextSequence += 1;
+    candidate = `${prefix}-${year}-${String(nextSequence).padStart(3, '0')}`;
+  }
+  return candidate;
+}
+
+function createSubscriptionId() {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
+    return `sub-${globalThis.crypto.randomUUID()}`;
+  }
+  return `sub-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 export function SubscriptionProvider({ children, initialUser }) {
   // ── Products (localStorage persisted) ──────────────────────────────────
@@ -349,38 +386,61 @@ export function SubscriptionProvider({ children, initialUser }) {
   // ── Subscription Actions ──────────────────────────────────────────────
 
   const createSubscription = (quoteData) => {
-    const subNumber = quoteData.status === 'Draft'
-      ? `QT-2026-${Math.floor(100 + Math.random() * 900)}`
-      : `SUB-2026-${Math.floor(100 + Math.random() * 900)}`;
-
+    const today = getLocalDateString();
+    const status = quoteData.status || 'Draft';
+    const numberPrefix = ['Draft', 'Quotation'].includes(status) ? 'QT' : 'SUB';
+    const parsedValidityDays = Number.parseInt(quoteData.quoteValidityDays, 10);
+    const quoteValidityDays = Number.isInteger(parsedValidityDays) && parsedValidityDays > 0
+      ? parsedValidityDays
+      : 30;
     const newSub = {
       ...quoteData,
-      id: `sub-${Date.now()}`,
-      subNumber,
-      createdAt: new Date().toISOString().split('T')[0]
+      id: createSubscriptionId(),
+      status,
+      subNumber: getNextDocumentNumber(numberPrefix, subscriptions),
+      quoteValidityDays,
+      quoteValidUntil: quoteData.quoteValidUntil || addDaysToDateString(today, quoteValidityDays),
+      quoteIssuedAt: status === 'Quotation' ? (quoteData.quoteIssuedAt || today) : (quoteData.quoteIssuedAt || null),
+      createdAt: quoteData.createdAt || today,
+      updatedAt: today
     };
-
     setSubscriptions((prev) => [newSub, ...prev]);
-    showToast(`Subscription ${subNumber} created in ${quoteData.status} status!`, 'success');
+    showToast(`${numberPrefix === 'QT' ? 'Quotation' : 'Subscription'} ${newSub.subNumber} created in ${status} status!`, 'success');
     return newSub;
   };
 
   const updateSubscriptionStatus = (id, newStatus) => {
-    setSubscriptions((prev) =>
-      prev.map((sub) => {
-        if (sub.id === id) {
-          let subNumber = sub.subNumber;
-          if (subNumber.startsWith('QT-') && (newStatus === 'Confirmed' || newStatus === 'Active')) {
-            subNumber = `SUB-2026-${Math.floor(100 + Math.random() * 900)}`;
-          }
-          return { ...sub, status: newStatus, subNumber };
-        }
-        return sub;
-      })
-    );
+    const currentSub = subscriptions.find((sub) => sub.id === id);
+    if (!currentSub) return null;
+    const today = getLocalDateString();
+    const isReissuedQuotation = currentSub.status === 'Closed' && newStatus === 'Quotation';
+    const isRejectedQuote = newStatus === 'Closed' && ['Draft', 'Quotation'].includes(currentSub.status);
+    const targetPrefix = ['Draft', 'Quotation'].includes(newStatus) || isRejectedQuote ? 'QT' : 'SUB';
+    const numberNeedsRefresh = isReissuedQuotation || !String(currentSub.subNumber || '').startsWith(`${targetPrefix}-`);
+    const subNumber = numberNeedsRefresh
+      ? getNextDocumentNumber(targetPrefix, subscriptions)
+      : currentSub.subNumber;
+    const parsedValidityDays = Number.parseInt(currentSub.quoteValidityDays, 10);
+    const quoteValidityDays = Number.isInteger(parsedValidityDays) && parsedValidityDays > 0
+      ? parsedValidityDays
+      : 30;
+    const isIssuingQuotation = newStatus === 'Quotation' && currentSub.status !== 'Quotation';
+    const updatedSub = {
+      ...currentSub,
+      status: newStatus,
+      subNumber,
+      updatedAt: today,
+      ...(isIssuingQuotation ? {
+        quoteValidityDays,
+        quoteIssuedAt: today,
+        quoteValidUntil: addDaysToDateString(today, quoteValidityDays),
+        ...(isReissuedQuotation ? { renewalOf: currentSub.subNumber } : {})
+      } : {})
+    };
+    setSubscriptions((prev) => prev.map((sub) => sub.id === id ? updatedSub : sub));
     showToast(`Subscription updated to status: ${newStatus}`, 'info');
+    return updatedSub;
   };
-
   // ── Billing Day Engine: Scene 4 & 5 ───────────────────────────────────
 
   // Helper to advance date by billing frequency
