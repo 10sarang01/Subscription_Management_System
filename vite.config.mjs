@@ -9,6 +9,11 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:5001',
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', () => {
+            // Backend not running – app uses localStorage fallback
+          });
+        },
       },
     },
   },

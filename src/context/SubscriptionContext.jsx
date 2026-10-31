@@ -108,26 +108,9 @@ export function SubscriptionProvider({ children, initialUser }) {
     localStorage.setItem('brightloop_payments', JSON.stringify(payments));
   }, [payments]);
 
-  // Fetch live products and plans from SQLite backend
-  useEffect(() => {
-    fetch('/api/products')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.products) {
-          setProducts(data.products);
-        }
-      })
-      .catch((err) => console.log('Products API sync fallback to local store:', err.message));
+  // Note: Products and plans are persisted in localStorage.
+  // Backend sync happens on individual add/delete operations (with graceful fallback).
 
-    fetch('/api/plans')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.plans) {
-          setPlans(data.plans);
-        }
-      })
-      .catch((err) => console.log('Plans API sync fallback to local store:', err.message));
-  }, []);
 
   // Product Actions (Live SQLite Persistence)
   const addProduct = async (newProduct) => {

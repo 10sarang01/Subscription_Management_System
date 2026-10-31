@@ -12,7 +12,6 @@ import {
   Tag,
   Shield,
   HelpCircle,
-  Sparkles,
   Trash2,
   Database,
   ArrowRight
@@ -570,7 +569,9 @@ export default function ProductsPage() {
                   className="neu-inset neu-input"
                   style={{ resize: 'none' }}
                 />
-                           {/* Odoo Brand Variant Checkbox */}
+              </div>
+
+              {/* Odoo Brand Variant Checkbox */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <input
                   type="checkbox"
@@ -584,10 +585,10 @@ export default function ProductsPage() {
                 </label>
                 {productForm.hasOdooBrand && (
                   <span style={{ fontSize: '0.78rem', color: '#5b21b6', fontWeight: 700 }}>
-                    (+$560 → Total: ${((parseFloat(productForm.salesPrice) || 0) + 560).toFixed(2)})
+                    (+$560 &rarr; Total: ${((parseFloat(productForm.salesPrice) || 0) + 560).toFixed(2)})
                   </span>
                 )}
-              </div>   </div>
+              </div>
 
               {/* Optional Additional Custom Variants */}
               <div style={{ borderTop: '1px solid rgba(184, 194, 204, 0.3)', paddingTop: '14px' }}>
