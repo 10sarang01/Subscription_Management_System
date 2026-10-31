@@ -126,7 +126,7 @@ export default function Dashboard({ user, token, onLogout }) {
       <div className="neu-inset" style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', fontSize: '0.88rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Database size={18} style={{ color: 'var(--primary)' }} />
-          <span>Connected to local SQLite database: <strong>users.db</strong></span>
+          <span>Connected to local SQLite database: <strong>brightloop.db</strong></span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <Shield size={16} style={{ color: 'var(--primary)' }} />
@@ -242,7 +242,7 @@ export default function Dashboard({ user, token, onLogout }) {
                 SQLite Users Directory ({usersList.length} Accounts)
               </h3>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Real-time records queried directly from local SQLite database (<code>users.db</code>)
+                Real-time records queried directly from local SQLite database (<code>brightloop.db</code>)
               </p>
             </div>
             <button
