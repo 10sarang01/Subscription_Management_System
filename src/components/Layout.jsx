@@ -304,34 +304,6 @@ export default function Layout({ onLogout }) {
               <Zap size={15} />
               ⚡ Run Billing Day
             </button>
-
-            {/* Persona Switcher Dropdown */}
-            <div className="neu-inset-sm" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px' }}>
-              <Shield size={15} style={{ color: 'var(--primary)' }} />
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Persona:</span>
-              <select
-                value={currentPersona.email}
-                onChange={(e) => {
-                  const selected = defaultPersonas.find((p) => p.email === e.target.value);
-                  if (selected) setCurrentPersona(selected);
-                }}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  outline: 'none',
-                  fontSize: '0.82rem',
-                  fontWeight: 700,
-                  color: 'var(--text-main)',
-                  cursor: 'pointer'
-                }}
-              >
-                {defaultPersonas.map((p) => (
-                  <option key={p.email} value={p.email}>
-                    {p.badge} - {p.name.split(' (')[0]}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
         </header>
 
