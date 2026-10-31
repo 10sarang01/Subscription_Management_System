@@ -366,6 +366,17 @@ app.delete('/api/products/:id', async (req, res) => {
   }
 });
 
+// GET /api/products/:productId/variants — list variants for a product
+app.get('/api/products/:productId/variants', async (req, res) => {
+  try {
+    const variants = await getVariantsByProductId(req.params.productId);
+    res.json({ variants });
+  } catch (err) {
+    console.error('Fetch product variants error:', err);
+    res.status(500).json({ error: 'Failed to fetch variants for product.' });
+  }
+});
+
 // ─── Product-scoped Plans API ─────────────────────────────────────────────
 
 // GET /api/products/:productId/plans — list all plans for a product
