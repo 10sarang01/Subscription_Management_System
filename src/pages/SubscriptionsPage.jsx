@@ -22,6 +22,31 @@ import {
   Sparkles
 } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
+const DEFAULT_QUOTE_VALIDITY_DAYS = 30;
+
+function getTodayDateString() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToDateString(dateString, days) {
+  if (!dateString || !Number.isFinite(Number(days))) return '';
+  const [year, month, day] = dateString.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + Number(days));
+  return date.toISOString().slice(0, 10);
+}
+
+function addYearsToDateString(dateString, years) {
+  if (!dateString) return '';
+  const [year, month, day] = dateString.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCFullYear(date.getUTCFullYear() + Number(years));
+  return date.toISOString().slice(0, 10);
+}
 
 export default function SubscriptionsPage() {
   const {
@@ -58,6 +83,15 @@ export default function SubscriptionsPage() {
   const [formPlanId, setFormPlanId] = useState(allActivePlans[0]?.id || '');
   const [formPaymentTerms, setFormPaymentTerms] = useState('Net 30');
   const [formDiscountCode, setFormDiscountCode] = useState('');
+  const [formValidityDays, setFormValidityDays] = useState(DEFAULT_QUOTE_VALIDITY_DAYS);
+  const [formQuoteValidUntil, setFormQuoteValidUntil] = useState(() =>
+    addDaysToDateString(getTodayDateString(), DEFAULT_QUOTE_VALIDITY_DAYS)
+  );
+  const [formStartDate, setFormStartDate] = useState(() => getTodayDateString());
+  const [formExpiryDate, setFormExpiryDate] = useState(() =>
+    addYearsToDateString(getTodayDateString(), 1)
+  );
+  const [formError, setFormError] = useState('');
   const [formItems, setFormItems] = useState([
     {
       productId: products[0]?.id || 'prod-1',
@@ -77,24 +111,78 @@ export default function SubscriptionsPage() {
 
   // Apply a template
   const applyTemplate = (template) => {
-    // Find plan from allActivePlans or fall back
     const templatePlan = allActivePlans.find((p) => p.id === template.planId) || allActivePlans[0];
     if (templatePlan) setFormPlanId(templatePlan.id);
-    const mappedItems = template.items.map((item) => {
+    const today = getTodayDateString();
+    const requestedValidityDays = Number.parseInt(template.validityDays, 10);
+    const validityDays = Number.isInteger(requestedValidityDays) && requestedValidityDays > 0
+      ? requestedValidityDays
+      : DEFAULT_QUOTE_VALIDITY_DAYS;
+    setFormCustomer('');
+    setFormEmail('');
+    setFormPaymentTerms('Net 30');
+    setFormDiscountCode('');
+    setFormValidityDays(validityDays);
+    setFormQuoteValidUntil(addDaysToDateString(today, validityDays));
+    setFormStartDate(today);
+    setFormExpiryDate(addYearsToDateString(today, 1));
+    setFormError('');
+    const mappedItems = (Array.isArray(template.items) ? template.items : []).map((item) => {
       const prod = products.find((p) => p.id === item.productId);
       return {
         productId: item.productId,
         name: prod?.name || 'Software Product',
         variant: item.variant || 'Standard',
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        taxRate: 0.10
+        quantity: Math.max(1, Number(item.quantity) || 1),
+        unitPrice: Math.max(0, Number(item.unitPrice) || 0),
+        taxRate: Number.isFinite(Number(item.taxRate)) ? Number(item.taxRate) : 0.10
       };
     });
     setFormItems(mappedItems);
     setShowCreateModal(true);
   };
 
+  const openNewQuote = () => {
+    const today = getTodayDateString();
+    const defaultProduct = products[0];
+    setFormCustomer('');
+    setFormEmail('');
+    setFormPlanId(allActivePlans[0]?.id || '');
+    setFormPaymentTerms('Net 30');
+    setFormDiscountCode('');
+    setFormValidityDays(DEFAULT_QUOTE_VALIDITY_DAYS);
+    setFormQuoteValidUntil(addDaysToDateString(today, DEFAULT_QUOTE_VALIDITY_DAYS));
+    setFormStartDate(today);
+    setFormExpiryDate(addYearsToDateString(today, 1));
+    setFormError('');
+    if (defaultProduct) {
+      setFormItems([{
+        productId: defaultProduct.id,
+        name: defaultProduct.name,
+        variant: defaultProduct.variants?.[0]?.name || 'Standard Edition',
+        quantity: 1,
+        unitPrice: Number(defaultProduct.salesPrice) || 0,
+        taxRate: 0.10
+      }]);
+    } else {
+      setFormItems([]);
+    }
+    setShowCreateModal(true);
+  };
+
+  const handleValidityDaysChange = (value) => {
+    if (value === '') {
+      setFormValidityDays('');
+      setFormQuoteValidUntil('');
+      return;
+    }
+    const validityDays = Number.parseInt(value, 10);
+    if (!Number.isFinite(validityDays)) return;
+    setFormValidityDays(validityDays);
+    setFormQuoteValidUntil(validityDays > 0
+      ? addDaysToDateString(getTodayDateString(), validityDays)
+      : '');
+  };
   const addItemRow = () => {
     const defaultProd = products[0] || { id: 'custom', name: 'Software Item', salesPrice: 100, variants: [] };
     setFormItems([
@@ -178,30 +266,73 @@ export default function SubscriptionsPage() {
   };
 
   const handleCreateSubmit = (e, initialStatus = 'Draft') => {
+    const formElement = e.currentTarget?.tagName === 'FORM'
+      ? e.currentTarget
+      : e.currentTarget?.form;
+    if (formElement && !formElement.reportValidity()) return;
     e.preventDefault();
-    const selectedPlanObj = allActivePlans?.find((p) => p.id === formPlanId) || { id: formPlanId, name: 'Standard Plan', billingInterval: 'monthly' };
+    setFormError('');
+    const selectedPlanObj = allActivePlans.find((p) => p.id === formPlanId);
+    const validityDays = Number.parseInt(formValidityDays, 10);
+    const today = getTodayDateString();
+    if (!formCustomer.trim() || !formEmail.trim()) {
+      setFormError('Enter the customer or company name and a valid customer email address.');
+      return;
+    }
+    if (!selectedPlanObj) {
+      setFormError('Select an active billing plan before saving this quote.');
+      return;
+    }
+    if (formItems.length === 0 || formItems.some((item) => (Number(item.quantity) || 0) < 1)) {
+      setFormError('Add at least one product line and set each quantity to one or more.');
+      return;
+    }
+    if (!Number.isInteger(validityDays) || validityDays < 1) {
+      setFormError('Quote validity must be at least one day.');
+      return;
+    }
+    if (!formStartDate || !formExpiryDate || formExpiryDate < formStartDate) {
+      setFormError('The subscription expiry date must be the same as or later than its start date.');
+      return;
+    }
+    const quoteValidUntil = addDaysToDateString(today, validityDays);
     const financials = calculateFormFinancials();
-
     const created = createSubscription({
-      customerName: formCustomer,
-      customerEmail: formEmail,
-      planId: selectedPlanObj?.id || formPlanId,
-      planName: selectedPlanObj?.name || 'Custom Plan',
-      billingFrequency: selectedPlanObj?.billingInterval || selectedPlanObj?.frequency || 'monthly',
-      startDate: new Date().toISOString().split('T')[0],
-      expiryDate: new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
-      nextBillingDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+      customerName: formCustomer.trim(),
+      customerEmail: formEmail.trim(),
+      planId: selectedPlanObj.id,
+      planName: selectedPlanObj.name,
+      billingFrequency: selectedPlanObj.billingInterval || selectedPlanObj.frequency || 'monthly',
+      quoteValidityDays: validityDays,
+      quoteValidUntil,
+      startDate: formStartDate,
+      expiryDate: formExpiryDate,
+      nextBillingDate: formStartDate,
       paymentTerms: formPaymentTerms,
-      status: initialStatus, // Draft or Quotation
+      status: initialStatus,
       discountCode: formDiscountCode.trim() ? formDiscountCode.trim().toUpperCase() : '',
-      items: formItems,
+      items: formItems.map((item) => ({
+        ...item,
+        quantity: Number(item.quantity) || 1,
+        unitPrice: Number(item.unitPrice) || 0,
+        taxRate: Number.isFinite(Number(item.taxRate)) ? Number(item.taxRate) : 0.10
+      })),
       totalAmount: financials.grandTotal
     });
-
+    if (!created) {
+      setFormError('The quote could not be saved. Please try again.');
+      return;
+    }
+    setFormQuoteValidUntil(quoteValidUntil);
     setShowCreateModal(false);
     setSelectedSub(created);
   };
 
+  const transitionSubscription = (newStatus) => {
+    if (!selectedSub) return;
+    const updatedSubscription = updateSubscriptionStatus(selectedSub.id, newStatus);
+    if (updatedSubscription) setSelectedSub(updatedSubscription);
+  };
   const getStatusBadge = (status) => {
     switch (status) {
       case 'Draft':
@@ -237,7 +368,7 @@ export default function SubscriptionsPage() {
         </div>
 
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={openNewQuote}
           className="neu-btn-primary"
           style={{ padding: '10px 20px', fontSize: '0.86rem' }}
         >
@@ -303,7 +434,7 @@ export default function SubscriptionsPage() {
                 <th>Customer</th>
                 <th>Plan & Frequency</th>
                 <th>Billing Terms</th>
-                <th>Valid Dates</th>
+                <th>Quote Validity / Contract Dates</th>
                 <th>Total / Cycle</th>
                 <th>Status</th>
                 <th>Action</th>
@@ -329,8 +460,8 @@ export default function SubscriptionsPage() {
                     {sub.paymentTerms}
                   </td>
                   <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    <div>From: {sub.startDate}</div>
-                    <div>Until: {sub.expiryDate}</div>
+                    <div>Quote until: {sub.quoteValidUntil || '—'}</div>
+                    <div>Contract: {sub.startDate || '—'} to {sub.expiryDate || '—'}</div>
                   </td>
                   <td style={{ fontWeight: 800, fontSize: '0.96rem' }}>
                     ${sub.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -371,6 +502,10 @@ export default function SubscriptionsPage() {
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                   Customer: <strong>{selectedSub.customerName}</strong> ({selectedSub.customerEmail})
                 </p>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Quote valid until <strong>{selectedSub.quoteValidUntil || 'Not specified'}</strong>
+                  {' · '}Subscription term: <strong>{selectedSub.startDate || '—'} to {selectedSub.expiryDate || '—'}</strong>
+                </p>
               </div>
 
               <button onClick={() => setSelectedSub(null)} className="neu-btn" style={{ padding: '6px 12px' }}>
@@ -388,8 +523,7 @@ export default function SubscriptionsPage() {
                 {selectedSub.status === 'Draft' && (
                   <button
                     onClick={() => {
-                      updateSubscriptionStatus(selectedSub.id, 'Quotation');
-                      setSelectedSub({ ...selectedSub, status: 'Quotation' });
+                      transitionSubscription('Quotation');
                     }}
                     className="neu-btn-primary"
                     style={{ padding: '8px 16px', fontSize: '0.82rem' }}
@@ -402,8 +536,7 @@ export default function SubscriptionsPage() {
                   <>
                     <button
                       onClick={() => {
-                        updateSubscriptionStatus(selectedSub.id, 'Confirmed');
-                        setSelectedSub({ ...selectedSub, status: 'Confirmed' });
+                        transitionSubscription('Confirmed');
                       }}
                       className="neu-btn-primary"
                       style={{ padding: '8px 16px', fontSize: '0.82rem' }}
@@ -412,8 +545,7 @@ export default function SubscriptionsPage() {
                     </button>
                     <button
                       onClick={() => {
-                        updateSubscriptionStatus(selectedSub.id, 'Closed');
-                        setSelectedSub({ ...selectedSub, status: 'Closed' });
+                        transitionSubscription('Closed');
                       }}
                       className="neu-btn"
                       style={{ padding: '8px 14px', fontSize: '0.82rem', color: 'var(--error)' }}
@@ -426,8 +558,7 @@ export default function SubscriptionsPage() {
                 {selectedSub.status === 'Confirmed' && (
                   <button
                     onClick={() => {
-                      updateSubscriptionStatus(selectedSub.id, 'Active');
-                      setSelectedSub({ ...selectedSub, status: 'Active' });
+                      transitionSubscription('Active');
                     }}
                     className="neu-btn-primary"
                     style={{ padding: '8px 18px', fontSize: '0.82rem' }}
@@ -440,8 +571,7 @@ export default function SubscriptionsPage() {
                   <>
                     <button
                       onClick={() => {
-                        updateSubscriptionStatus(selectedSub.id, 'Paused');
-                        setSelectedSub({ ...selectedSub, status: 'Paused' });
+                        transitionSubscription('Paused');
                       }}
                       className="neu-btn"
                       style={{ padding: '8px 14px', fontSize: '0.82rem', color: '#c2410c' }}
@@ -450,8 +580,7 @@ export default function SubscriptionsPage() {
                     </button>
                     <button
                       onClick={() => {
-                        updateSubscriptionStatus(selectedSub.id, 'Closed');
-                        setSelectedSub({ ...selectedSub, status: 'Closed' });
+                        transitionSubscription('Closed');
                       }}
                       className="neu-btn"
                       style={{ padding: '8px 14px', fontSize: '0.82rem', color: 'var(--error)' }}
@@ -471,8 +600,7 @@ export default function SubscriptionsPage() {
                 {selectedSub.status === 'Paused' && (
                   <button
                     onClick={() => {
-                      updateSubscriptionStatus(selectedSub.id, 'Active');
-                      setSelectedSub({ ...selectedSub, status: 'Active' });
+                      transitionSubscription('Active');
                     }}
                     className="neu-btn-primary"
                     style={{ padding: '8px 16px', fontSize: '0.82rem' }}
@@ -484,8 +612,7 @@ export default function SubscriptionsPage() {
                 {selectedSub.status === 'Closed' && (
                   <button
                     onClick={() => {
-                      updateSubscriptionStatus(selectedSub.id, 'Quotation');
-                      setSelectedSub({ ...selectedSub, status: 'Quotation' });
+                      transitionSubscription('Quotation');
                     }}
                     className="neu-btn-primary"
                     style={{ padding: '8px 16px', fontSize: '0.82rem' }}
@@ -574,9 +701,14 @@ export default function SubscriptionsPage() {
               Create Quote or Subscription
             </h3>
             <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
-              Assemble customer, recurring plan, product lines with brand variants, and payment terms.
+              Assemble customer, quote validity, subscription dates, plan, product lines, and payment terms.
             </p>
 
+            {formError && (
+              <div role="alert" style={{ padding: '10px 14px', borderRadius: '10px', background: '#fee2e2', color: '#991b1b', fontSize: '0.85rem', marginBottom: '14px' }}>
+                {formError}
+              </div>
+            )}
             <form onSubmit={(e) => handleCreateSubmit(e, 'Draft')} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
               
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px' }}>
@@ -760,6 +892,37 @@ export default function SubscriptionsPage() {
                 </div>
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '14px' }}>
+                <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Quotation Valid For (Days)
+                  </label>
+                  <input type="number" min="1" required value={formValidityDays}
+                    onChange={(e) => handleValidityDaysChange(e.target.value)} className="neu-inset neu-input" />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Quote Valid Until
+                  </label>
+                  <input type="date" value={formQuoteValidUntil} readOnly aria-describedby="quote-validity-help" className="neu-inset neu-input" />
+                  <small id="quote-validity-help" style={{ display: 'block', marginTop: '4px', color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                    Calculated from today using the validity period above.
+                  </small>
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Subscription Start Date
+                  </label>
+                  <input type="date" required value={formStartDate} onChange={(e) => setFormStartDate(e.target.value)} className="neu-inset neu-input" />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Subscription Expiry Date
+                  </label>
+                  <input type="date" required min={formStartDate || undefined} value={formExpiryDate}
+                    onChange={(e) => setFormExpiryDate(e.target.value)} className="neu-inset neu-input" />
+                </div>
+              </div>
               {/* Dynamic Line Items Section */}
               <div style={{ borderTop: '1px solid rgba(184, 194, 204, 0.3)', paddingTop: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -865,7 +1028,7 @@ export default function SubscriptionsPage() {
                   <div style={{ height: '1px', background: 'rgba(184, 194, 204, 0.4)', margin: '4px 0' }} />
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', fontWeight: 800, color: 'var(--primary)' }}>
-                    <span>Estimated Cycle Total:</span>
+                    <span>Estimated Cycle Total (incl. 10% VAT):</span>
                     <span>${calculateFormFinancials().grandTotal.toFixed(2)}</span>
                   </div>
                 </div>
