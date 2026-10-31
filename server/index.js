@@ -16,13 +16,21 @@ const {
   deleteProduct,
   getAllPlans,
   createPlan,
-  deletePlan,
   getPlansByProductId,
   getAllProductPlans,
   createProductPlan,
   updateProductPlan,
   toggleProductPlanStatus,
-  deleteProductPlan
+  deleteProductPlan,
+  // Discounts
+  getAllDiscounts,
+  getDiscountByCode,
+  getDiscountById,
+  createDiscount,
+  toggleDiscountStatus,
+  incrementDiscountUsage,
+  deleteDiscount,
+  getVariantsByProductId
 } = require('./db');
 
 const app = express();
@@ -519,6 +527,94 @@ app.get('/api/plans', async (req, res) => {
   } catch (err) {
     console.error('Fetch plans error:', err);
     res.status(500).json({ error: 'Failed to fetch plans.' });
+  }
+});
+
+// ─── Discounts API (Scene 5 Live Persistence) ─────────────────────────────
+
+// GET /api/discounts — fetch all discounts from SQLite database
+app.get('/api/discounts', async (req, res) => {
+  try {
+    const discounts = await getAllDiscounts();
+    res.json({ discounts });
+  } catch (err) {
+    console.error('Fetch discounts error:', err);
+    res.status(500).json({ error: 'Failed to fetch discounts from database.' });
+  }
+});
+
+// POST /api/discounts — create and persist new discount rule
+app.post('/api/discounts', async (req, res) => {
+  const { code, name, type, value, scope, targetProductId, minQuantity, minAmount, startDate, endDate, usageLimit } = req.body;
+
+  if (!code || !name) {
+    return res.status(400).json({ error: 'Discount code and rule description name are required.' });
+  }
+
+  // Check uniqueness of code
+  const existing = await getDiscountByCode(code);
+  if (existing) {
+    return res.status(400).json({ error: `Discount code "${code.toUpperCase()}" already exists in the database.` });
+  }
+
+  try {
+    const discount = await createDiscount({
+      code,
+      name,
+      type,
+      value,
+      scope,
+      targetProductId,
+      minQuantity,
+      minAmount,
+      startDate,
+      endDate,
+      usageLimit
+    });
+    res.status(201).json({ message: 'Discount rule created and persisted in database.', discount });
+  } catch (err) {
+    console.error('Create discount error:', err);
+    res.status(500).json({ error: 'Failed to create discount rule.' });
+  }
+});
+
+// PATCH /api/discounts/:id/status — toggle active/paused status in SQLite
+app.patch('/api/discounts/:id/status', async (req, res) => {
+  try {
+    const { isActive } = req.body;
+    const updated = await toggleDiscountStatus(req.params.id, isActive);
+    if (!updated) {
+      return res.status(404).json({ error: 'Discount rule not found.' });
+    }
+    res.json({ message: 'Discount status updated in database.', discount: updated });
+  } catch (err) {
+    console.error('Toggle discount error:', err);
+    res.status(500).json({ error: 'Failed to update discount status.' });
+  }
+});
+
+// POST /api/discounts/use — record discount usage and auto-deactivate when exhausted
+app.post('/api/discounts/use', async (req, res) => {
+  const { code, count } = req.body;
+  if (!code) {
+    return res.status(400).json({ error: 'Discount code is required.' });
+  }
+  try {
+    const updated = await incrementDiscountUsage(code, parseInt(count, 10) || 1);
+    res.json({ message: 'Discount redemption usage recorded.', discount: updated });
+  } catch (err) {
+    console.error('Discount usage error:', err);
+    res.status(500).json({ error: 'Failed to record discount usage.' });
+  }
+});
+
+// DELETE /api/discounts/:id — delete discount from SQLite
+app.delete('/api/discounts/:id', async (req, res) => {
+  try {
+    await deleteDiscount(req.params.id);
+    res.json({ message: 'Discount rule removed from database.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete discount.' });
   }
 });
 
