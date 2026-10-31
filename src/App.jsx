@@ -195,7 +195,7 @@ export default function App() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <Database size={14} />
-          <span>Local SQLite: <strong>users.db</strong></span>
+          <span>Local SQLite: <strong>brightloop.db</strong></span>
         </div>
         <span>•</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

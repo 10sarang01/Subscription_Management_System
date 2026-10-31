@@ -330,7 +330,7 @@ export default function TeamPage() {
       <div className="neu-inset" style={{ padding: '16px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', fontSize: '0.88rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Database size={18} style={{ color: 'var(--primary)' }} />
-          <span>Local SQLite Database: <strong>users.db</strong> (Table: <code>users</code>)</span>
+          <span>Local SQLite Database: <strong>brightloop.db</strong> (Table: <code>users</code>)</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Shield size={16} style={{ color: '#16a34a' }} />

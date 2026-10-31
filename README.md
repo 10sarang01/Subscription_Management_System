@@ -6,7 +6,7 @@ Step 1 of the Brightloop Software Subscription Management platform: A local SQLi
 
 ## 🚀 Features Implemented
 
-1. **Local SQLite Database (`users.db`)**:
+1. **Local SQLite Database (`brightloop.db`)**:
    - Stores user details exclusively.
    - Pre-seeded with a default **Admin** account (`admin@brightloop.com`), plus sample Staff and Customer accounts.
    - Schema enforces unique emails (case-insensitive), password hashing (`bcrypt`), and roles (`admin`, `staff`, `customer`).
@@ -22,7 +22,7 @@ Step 1 of the Brightloop Software Subscription Management platform: A local SQLi
    - **Forgot Password Modal**: Simulates password reset links dispatched to registered emails.
    - **Live Dashboard**:
      - Displays authenticated profile information and role badge.
-     - **Admin Control**: Live view of the SQLite `users.db` directory and restricted ability to onboard internal staff members ("Only the admin can add a new member of staff").
+     - **Admin Control**: Live view of the SQLite `brightloop.db` directory and restricted ability to onboard internal staff members ("Only the admin can add a new member of staff").
      - **Customer Portal**: Self-service portal view.
 
 3. **Neumorphism (Soft UI) CSS**:
@@ -70,7 +70,7 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 ## 📁 Project Structure
 
 ```
-├── users.db               # SQLite local database (Users details only)
+├── brightloop.db          # SQLite local database (Brightloop Unified DB)
 ├── server/
 │   ├── db.js              # SQLite database schema, seeding & query methods
 │   └── index.js           # Express REST API (Auth, JWT, Register, Staff Creation)

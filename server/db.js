@@ -2,7 +2,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 
 // Database path for official SQLite database
-const DB_PATH = path.join(__dirname, '..', 'users.db');
+const DB_PATH = path.join(__dirname, '..', 'brightloop.db');
 
 let db;
 try {
@@ -53,13 +53,17 @@ async function initDatabase() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       type TEXT NOT NULL,
+      product_type TEXT NOT NULL DEFAULT 'software',
       sales_price REAL NOT NULL,
       cost_price REAL NOT NULL,
       notes TEXT,
       has_odoo_variant INTEGER NOT NULL DEFAULT 0,
       odoo_price_offset REAL NOT NULL DEFAULT 560,
       variants_json TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      tax_id INTEGER,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     -- Legacy global plans table (kept for backward compatibility)
@@ -322,13 +326,14 @@ async function createProduct({ id, name, type, salesPrice, costPrice, notes, has
   }));
 
   const stmt = db.prepare(`
-    INSERT INTO products (id, name, type, sales_price, cost_price, notes, has_odoo_variant, odoo_price_offset, variants_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO products (id, name, type, product_type, sales_price, cost_price, notes, has_odoo_variant, odoo_price_offset, variants_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
     prodId,
     name.trim(),
     type,
+    (type || 'software').toLowerCase(),
     validSalesPrice,
     validCostPrice,
     notes || '',
