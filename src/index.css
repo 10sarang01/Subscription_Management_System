@@ -1,0 +1,217 @@
+:root {
+  --bg-color: #e2e8f0;
+  --bg-surface: #e2e8f0;
+  --shadow-light: #ffffff;
+  --shadow-dark: #b8c2cc;
+  --text-main: #2d3748;
+  --text-muted: #718096;
+  --primary: #4f46e5;
+  --primary-light: #6366f1;
+  --primary-shadow: rgba(79, 70, 229, 0.35);
+  --success: #10b981;
+  --error: #ef4444;
+  --warning: #f59e0b;
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-sm: 8px;
+  --radius-pill: 9999px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Neumorphic Foundations */
+.neu-flat {
+  background: var(--bg-color);
+  box-shadow: 10px 10px 20px var(--shadow-dark),
+              -10px -10px 20px var(--shadow-light);
+  border-radius: var(--radius-lg);
+}
+
+.neu-flat-sm {
+  background: var(--bg-color);
+  box-shadow: 5px 5px 10px var(--shadow-dark),
+              -5px -5px 10px var(--shadow-light);
+  border-radius: var(--radius-md);
+}
+
+.neu-inset {
+  background: var(--bg-color);
+  box-shadow: inset 4px 4px 8px var(--shadow-dark),
+              inset -4px -4px 8px var(--shadow-light);
+  border-radius: var(--radius-md);
+  border: none;
+  outline: none;
+}
+
+.neu-inset-sm {
+  background: var(--bg-color);
+  box-shadow: inset 2px 2px 5px var(--shadow-dark),
+              inset -2px -2px 5px var(--shadow-light);
+  border-radius: var(--radius-sm);
+}
+
+.neu-btn {
+  background: var(--bg-color);
+  box-shadow: 6px 6px 12px var(--shadow-dark),
+              -6px -6px 12px var(--shadow-light);
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-main);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.neu-btn:hover {
+  box-shadow: 4px 4px 8px var(--shadow-dark),
+              -4px -4px 8px var(--shadow-light);
+  transform: translateY(-1px);
+}
+
+.neu-btn:active, .neu-btn.active {
+  box-shadow: inset 3px 3px 6px var(--shadow-dark),
+              inset -3px -3px 6px var(--shadow-light);
+  transform: translateY(1px);
+}
+
+.neu-btn-primary {
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  color: #ffffff;
+  box-shadow: 6px 6px 14px var(--shadow-dark),
+              -6px -6px 14px var(--shadow-light),
+              0 4px 12px var(--primary-shadow);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-weight: 700;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.neu-btn-primary:hover {
+  box-shadow: 4px 4px 10px var(--shadow-dark),
+              -4px -4px 10px var(--shadow-light),
+              0 6px 16px var(--primary-shadow);
+  filter: brightness(1.05);
+}
+
+.neu-btn-primary:active {
+  box-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.3);
+  transform: scale(0.985);
+}
+
+.neu-pill {
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pill-admin {
+  background: #ede9fe;
+  color: #5b21b6;
+  box-shadow: inset 1px 1px 3px #c4b5fd, inset -1px -1px 3px #ffffff;
+}
+
+.pill-staff {
+  background: #e0f2fe;
+  color: #0369a1;
+  box-shadow: inset 1px 1px 3px #bae6fd, inset -1px -1px 3px #ffffff;
+}
+
+.pill-customer {
+  background: #ecfdf5;
+  color: #047857;
+  box-shadow: inset 1px 1px 3px #a7f3d0, inset -1px -1px 3px #ffffff;
+}
+
+/* Form controls */
+.neu-input {
+  width: 100%;
+  padding: 14px 16px;
+  color: var(--text-main);
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: box-shadow 0.2s ease;
+}
+
+.neu-input:focus {
+  box-shadow: inset 5px 5px 10px var(--shadow-dark),
+              inset -5px -5px 10px var(--shadow-light),
+              0 0 0 2px var(--primary-light);
+}
+
+.neu-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Tab Selector */
+.neu-tabs {
+  display: flex;
+  background: var(--bg-color);
+  padding: 6px;
+  border-radius: var(--radius-pill);
+  box-shadow: inset 3px 3px 6px var(--shadow-dark),
+              inset -3px -3px 6px var(--shadow-light);
+  gap: 6px;
+}
+
+.neu-tab {
+  flex: 1;
+  padding: 10px 16px;
+  text-align: center;
+  border-radius: var(--radius-pill);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.neu-tab.active {
+  color: var(--primary);
+  background: var(--bg-color);
+  box-shadow: 4px 4px 8px var(--shadow-dark),
+              -4px -4px 8px var(--shadow-light);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
